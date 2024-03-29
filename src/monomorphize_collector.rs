@@ -368,7 +368,7 @@ fn collect_items_rec<'tcx>(
 /// If the type name is longer than before+after, it will be written to a file.
 fn shrunk_instance_name<'tcx>(
     tcx: TyCtxt<'tcx>,
-    instance: &Instance<'tcx>,
+    instance: Instance<'tcx>,
 ) -> (String, Option<PathBuf>) {
     let s = instance.to_string();
 
@@ -416,7 +416,7 @@ fn check_recursion_limit<'tcx>(
     if !recursion_limit.value_within_limit(adjusted_recursion_depth) {
         let def_span = tcx.def_span(def_id);
         let def_path_str = tcx.def_path_str(def_id);
-        let (shrunk, written_to_path) = shrunk_instance_name(tcx, &instance);
+        let (shrunk, written_to_path) = shrunk_instance_name(tcx, instance);
         let error = format!(
             "reached the recursion limit while instantiating `{}`",
             shrunk
@@ -456,7 +456,7 @@ fn check_type_length_limit<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) {
     //
     // Bail out in these cases to avoid that bad user experience.
     if !tcx.type_length_limit().value_within_limit(type_length) {
-        let (shrunk, written_to_path) = shrunk_instance_name(tcx, &instance);
+        let (shrunk, written_to_path) = shrunk_instance_name(tcx, instance);
         let msg = format!(
             "reached the type-length limit while instantiating `{}`",
             shrunk
