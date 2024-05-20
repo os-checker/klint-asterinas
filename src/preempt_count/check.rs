@@ -5,8 +5,8 @@ use rustc_middle::mir::interpret::{AllocId, ErrorHandled, GlobalAlloc, Scalar};
 use rustc_middle::mir::{self, visit::Visitor as MirVisitor, Body, Location};
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::{
-    self, GenericArgs, GenericParamDefKind, Instance, ParamEnv, ParamEnvAnd, ToPredicate, Ty,
-    TyCtxt, TypeFoldable, TypeVisitableExt,
+    self, GenericArgs, GenericParamDefKind, Instance, ParamEnv, ParamEnvAnd, Ty, TyCtxt,
+    TypeFoldable, TypeVisitableExt, Upcast,
 };
 use rustc_span::Span;
 
@@ -494,7 +494,7 @@ memoize!(
             assert!(!poly_trait_ref.has_escaping_bound_vars());
 
             let mut visited = PredicateSet::new(cx.tcx);
-            let predicate = poly_trait_ref.to_predicate(cx.tcx);
+            let predicate = poly_trait_ref.upcast(cx.tcx);
             let mut stack: Vec<ty::PolyTraitRef<'tcx>> = vec![poly_trait_ref];
             visited.insert(predicate);
 
@@ -508,7 +508,7 @@ memoize!(
                             .as_trait_clause()
                     });
                 for supertrait in super_traits {
-                    if visited.insert(supertrait.to_predicate(cx.tcx)) {
+                    if visited.insert(supertrait.upcast(cx.tcx)) {
                         let supertrait = supertrait.map_bound(|t| t.trait_ref);
                         stack.push(supertrait);
                     }
