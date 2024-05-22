@@ -1,7 +1,7 @@
 warning: constructing this vtable may result in preemption count rule violation
-  --> $DIR/vtable.rs:32:35
+  --> $DIR/vtable.rs:36:35
    |
-32 |     let a: &'static dyn MyTrait = &Bad;
+36 |     let a: &'static dyn MyTrait = &Bad;
    |                                   ^^^^
    |
    = help: `<Bad as MyTrait>::foo` is constructed as part of `dyn MyTrait`
@@ -11,9 +11,9 @@ warning: constructing this vtable may result in preemption count rule violation
 WARN klint::ctxt no klint metadata found for crate alloc
 WARN klint::ctxt no klint metadata found for crate core
 warning: constructing this vtable may result in preemption count rule violation
-  --> $DIR/vtable.rs:50:32
+  --> $DIR/vtable.rs:54:32
    |
-50 |     let _a: Box<dyn MyTrait> = Box::new(BadDrop);
+54 |     let _a: Box<dyn MyTrait> = Box::new(BadDrop);
    |                                ^^^^^^^^^^^^^^^^^
    |
    = help: drop glue of `BadDrop` is constructed as part of `dyn MyTrait`
@@ -21,22 +21,22 @@ warning: constructing this vtable may result in preemption count rule violation
    = help: while the expected adjustment for vtable is 0 and the expectation is 0
 
 error: trait method annotated to have preemption count adjustment of 1
-  --> $DIR/vtable.rs:75:5
+  --> $DIR/vtable.rs:79:5
    |
-75 |     fn foo(&self) {}
+79 |     fn foo(&self) {}
    |     ^^^^^^^^^^^^^
    |
    = note: but the adjustment of this implementing function is 0
 note: the trait method is defined here
-  --> $DIR/vtable.rs:55:5
+  --> $DIR/vtable.rs:59:5
    |
-55 |     fn foo(&self);
+59 |     fn foo(&self);
    |     ^^^^^^^^^^^^^^
 
 warning: constructing this vtable may result in preemption count rule violation
-  --> $DIR/vtable.rs:80:42
+  --> $DIR/vtable.rs:84:42
    |
-80 |     let a: &'static dyn AnnotatedTrait = &AnnotatedBad;
+84 |     let a: &'static dyn AnnotatedTrait = &AnnotatedBad;
    |                                          ^^^^^^^^^^^^^
    |
    = help: `<AnnotatedBad as AnnotatedTrait>::foo` is constructed as part of `dyn AnnotatedTrait`

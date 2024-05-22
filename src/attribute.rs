@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use rustc_ast::tokenstream::{self, TokenTree};
 use rustc_ast::{ast, token};
 use rustc_data_structures::sync::Lrc;

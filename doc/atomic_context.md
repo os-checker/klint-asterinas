@@ -1,3 +1,9 @@
+<!--
+Copyright Gary Guo.
+
+SPDX-License-Identifier: MIT OR Apache-2.0
+-->
+
 # Atomic context
 
 This lint will error on calls that violate [kernel locking rules](https://docs.kernel.org/locking/locktypes.html).

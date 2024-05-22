@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 pub mod drop_shim;
 
 use std::sync::atomic::AtomicPtr;

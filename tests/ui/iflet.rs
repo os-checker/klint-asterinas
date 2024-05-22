@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 #![crate_type = "lib"]
 
 // This is a case that currently klint will return false positive.

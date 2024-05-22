@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
 use rustc_hir::definitions::DefPathData;

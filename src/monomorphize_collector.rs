@@ -1,3 +1,8 @@
+// Copyright The Rust Project Developers.
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 // This module is from rustc_monomorphize/collector.rs, modified so that
 // * All uses are collected, including those that should not be codegen-ed locally.
 // * `inlines` field is removed from `InliningMap`.

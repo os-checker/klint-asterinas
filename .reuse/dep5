@@ -1,0 +1,6 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+
+Files: Cargo.lock
+       *.stderr
+Copyright: Gary Guo
+License: MIT or Apache-2.0

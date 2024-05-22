@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::sync::Arc;

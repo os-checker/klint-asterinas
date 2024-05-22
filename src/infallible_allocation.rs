@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_lint::{LateContext, LateLintPass, LintContext};
 use rustc_middle::mir::mono::MonoItem;

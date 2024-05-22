@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 // From rustc_mir_transform/src/shim.rs
 // Adopted to support polymorphic drop shims
 

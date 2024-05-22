@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use rustc_middle::mir::{BasicBlock, Body, TerminatorEdges, TerminatorKind};
 use rustc_middle::ty::{self, Instance, ParamEnv};
 use rustc_mir_dataflow::JoinSemiLattice;

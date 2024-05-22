@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 #![allow(non_upper_case_globals)]
 
 use rustc_span::Symbol;

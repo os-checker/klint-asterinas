@@ -1,3 +1,9 @@
+<!--
+Copyright Gary Guo.
+
+SPDX-License-Identifier: MIT OR Apache-2.0
+-->
+
 # Infallible allocation
 
 > Note: This lint is not current enabled because Rust-for-Linux is using custom liballoc with global OOM handling disabled already.

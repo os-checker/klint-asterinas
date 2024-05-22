@@ -1,19 +1,19 @@
 WARN klint::ctxt no klint metadata found for crate core
 error: cannot infer preemption count adjustment at this point
-  --> $DIR/adjustment.rs:23:5
+  --> $DIR/adjustment.rs:27:5
    |
-23 |     }
+27 |     }
    |     ^
    |
 note: preemption count adjustment is 1 after this
-  --> $DIR/adjustment.rs:22:26
+  --> $DIR/adjustment.rs:26:26
    |
-22 |         std::mem::forget(lock.lock());
+26 |         std::mem::forget(lock.lock());
    |                          ^^^^^^^^^^^
 note: while preemption count adjustment is 0 after this
-  --> $DIR/adjustment.rs:23:6
+  --> $DIR/adjustment.rs:27:6
    |
-23 |     }
+27 |     }
    |      ^
 
 error: aborting due to 1 previous error

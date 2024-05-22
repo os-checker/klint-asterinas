@@ -1,7 +1,7 @@
 error: this function is recursive but preemption count expectation is not 0..
-  --> $DIR/recursion.rs:16:1
+  --> $DIR/recursion.rs:20:1
    |
-16 | fn recursive_might_sleep_unannotated() {
+20 | fn recursive_might_sleep_unannotated() {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: expectation is inferred to be 0

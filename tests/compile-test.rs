@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 #![feature(lazy_cell)]
 
 extern crate compiletest_rs as compiletest;

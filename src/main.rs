@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 #![feature(rustc_private)]
 #![feature(lazy_cell)]
 #![feature(box_patterns)]

@@ -1,3 +1,7 @@
+// Copyright Gary Guo.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use rustc_data_structures::fx::{FxHashMap, FxIndexSet};
 use rustc_data_structures::sync::Lrc;
 use rustc_middle::mir::interpret::{self, AllocDecodingState, AllocId};
