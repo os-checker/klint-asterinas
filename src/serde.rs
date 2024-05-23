@@ -6,7 +6,7 @@ use rustc_data_structures::fx::{FxHashMap, FxIndexSet};
 use rustc_data_structures::sync::Lrc;
 use rustc_middle::mir::interpret::{self, AllocDecodingState, AllocId};
 use rustc_middle::ty::{self, Ty, TyCtxt, TyDecoder, TyEncoder};
-use rustc_serialize::opaque::MemDecoder;
+use rustc_serialize::opaque::{MemDecoder, MAGIC_END_BYTES};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_session::StableCrateId;
 use rustc_span::def_id::{CrateNum, DefId, DefIndex};
@@ -30,7 +30,8 @@ impl MemEncoder {
         self.data.len()
     }
 
-    pub fn finish(self) -> Vec<u8> {
+    pub fn finish(mut self) -> Vec<u8> {
+        self.data.extend_from_slice(MAGIC_END_BYTES);
         self.data
     }
 }
@@ -280,15 +281,18 @@ pub struct DecodeContext<'a, 'tcx> {
 
 impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, bytes: &'a [u8], span: Span) -> Self {
-        let vec_position =
-            u64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap()) as usize;
-        let mut decoder = MemDecoder::new(bytes, vec_position);
+        let vec_position = u64::from_le_bytes(
+            bytes[bytes.len() - MAGIC_END_BYTES.len() - 8..][..8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let mut decoder = MemDecoder::new(bytes, vec_position).unwrap();
         let interpret_alloc_index = Vec::<u64>::decode(&mut decoder);
         let alloc_decoding_state =
             Lrc::new(interpret::AllocDecodingState::new(interpret_alloc_index));
 
         Self {
-            decoder: MemDecoder::new(bytes, 0),
+            decoder: MemDecoder::new(bytes, 0).unwrap(),
             tcx,
             type_shorthands: Default::default(),
             alloc_decoding_state,
@@ -367,7 +371,7 @@ impl<'a, 'tcx> TyDecoder for DecodeContext<'a, 'tcx> {
     where
         F: FnOnce(&mut Self) -> R,
     {
-        let new_opaque = MemDecoder::new(self.decoder.data(), pos);
+        let new_opaque = self.decoder.split_at(pos);
         let old_opaque = std::mem::replace(&mut self.decoder, new_opaque);
         let r = f(self);
         self.decoder = old_opaque;
