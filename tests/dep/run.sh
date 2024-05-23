@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Copyright Gary Guo.
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
 cd $(dirname "${BASH_SOURCE[0]}")
 
 RUSTFLAGS="-Zcrate-attr=feature(register_tool) -Zcrate-attr=register_tool(klint) --edition=2021"
