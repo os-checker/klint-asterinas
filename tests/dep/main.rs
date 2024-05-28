@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![feature(lazy_cell)]
-
 use std::env;
 use std::path::PathBuf;
 use std::sync::LazyLock;
