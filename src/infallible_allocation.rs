@@ -178,77 +178,73 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
                         .tcx
                         .def_path_str_with_args(accessee.def_id(), accessee.args);
 
-                    cx.span_lint(
-                        &INFALLIBLE_ALLOCATION,
-                        item.span,
-                        format!(
+                    cx.span_lint(&INFALLIBLE_ALLOCATION, item.span, |diag| {
+                        diag.primary_message(format!(
                             "`{}` can perform infallible allocation{}",
                             accessee_path, generic_note
-                        ),
-                        |diag| {
-                            // For generic functions try to display a stacktrace until a non-generic one.
-                            let mut caller = *accessor;
-                            let mut visited = FxHashSet::default();
-                            visited.insert(*accessor);
-                            visited.insert(accessee);
-                            while is_generic_fn(cx.tcx, caller) {
-                                let spanned_caller = match backward
-                                    .get(&caller)
-                                    .map(|x| &**x)
-                                    .unwrap_or(&[])
-                                    .iter()
-                                    .find(|x| !visited.contains(&x.node))
-                                {
-                                    Some(v) => *v,
-                                    None => break,
-                                };
-                                caller = spanned_caller.node;
-                                visited.insert(caller);
+                        ));
+                        // For generic functions try to display a stacktrace until a non-generic one.
+                        let mut caller = *accessor;
+                        let mut visited = FxHashSet::default();
+                        visited.insert(*accessor);
+                        visited.insert(accessee);
+                        while is_generic_fn(cx.tcx, caller) {
+                            let spanned_caller = match backward
+                                .get(&caller)
+                                .map(|x| &**x)
+                                .unwrap_or(&[])
+                                .iter()
+                                .find(|x| !visited.contains(&x.node))
+                            {
+                                Some(v) => *v,
+                                None => break,
+                            };
+                            caller = spanned_caller.node;
+                            visited.insert(caller);
 
-                                diag.span_note(
-                                    spanned_caller.span,
-                                    format!(
-                                        "which is called from `{}`",
-                                        cx.tcx.def_path_str_with_args(caller.def_id(), caller.args)
-                                    ),
-                                );
-                            }
-
-                            // Generate some help messages for why the function is determined to be infallible.
-                            let mut msg: &str = &format!(
-                                "`{}` is determined to be infallible because it",
-                                accessee_path
+                            diag.span_note(
+                                spanned_caller.span,
+                                format!(
+                                    "which is called from `{}`",
+                                    cx.tcx.def_path_str_with_args(caller.def_id(), caller.args)
+                                ),
                             );
-                            let mut callee = accessee;
-                            loop {
-                                let callee_callee = match forward
-                                    .get(&callee)
-                                    .map(|x| &**x)
-                                    .unwrap_or(&[])
-                                    .iter()
-                                    .find(|x| {
-                                        infallible.contains(&x.node) && !visited.contains(&x.node)
-                                    }) {
-                                    Some(v) => v,
-                                    None => break,
-                                };
-                                callee = callee_callee.node;
-                                visited.insert(callee);
+                        }
 
-                                diag.span_note(
-                                    callee_callee.span,
-                                    format!(
-                                        "{} calls into `{}`",
-                                        msg,
-                                        cx.tcx.def_path_str_with_args(callee.def_id(), callee.args)
-                                    ),
-                                );
-                                msg = "which";
-                            }
+                        // Generate some help messages for why the function is determined to be infallible.
+                        let mut msg: &str = &format!(
+                            "`{}` is determined to be infallible because it",
+                            accessee_path
+                        );
+                        let mut callee = accessee;
+                        loop {
+                            let callee_callee = match forward
+                                .get(&callee)
+                                .map(|x| &**x)
+                                .unwrap_or(&[])
+                                .iter()
+                                .find(|x| {
+                                    infallible.contains(&x.node) && !visited.contains(&x.node)
+                                }) {
+                                Some(v) => v,
+                                None => break,
+                            };
+                            callee = callee_callee.node;
+                            visited.insert(callee);
 
-                            diag.note(format!("{} may call alloc_error_handler", msg));
-                        },
-                    );
+                            diag.span_note(
+                                callee_callee.span,
+                                format!(
+                                    "{} calls into `{}`",
+                                    msg,
+                                    cx.tcx.def_path_str_with_args(callee.def_id(), callee.args)
+                                ),
+                            );
+                            msg = "which";
+                        }
+
+                        diag.note(format!("{} may call alloc_error_handler", msg));
+                    });
                 }
             }
         }

@@ -79,13 +79,11 @@ impl<'tcx> AttrParser<'tcx> {
         span: Span,
         decorate: impl for<'a, 'b> FnOnce(&'b mut Diag<'a, ()>),
     ) -> Result<!, ErrorGuaranteed> {
-        self.tcx.node_span_lint(
-            crate::INCORRECT_ATTRIBUTE,
-            self.hir_id,
-            span,
-            "incorrect usage of `#[kint::preempt_count]`",
-            decorate,
-        );
+        self.tcx
+            .node_span_lint(crate::INCORRECT_ATTRIBUTE, self.hir_id, span, |lint| {
+                lint.primary_message("incorrect usage of `#[kint::preempt_count]`");
+                decorate(lint);
+            });
         Err(self
             .tcx
             .dcx()
@@ -419,13 +417,10 @@ impl<'tcx> AttrParser<'tcx> {
             return None;
         };
         if item.path.segments.len() != 2 {
-            self.tcx.node_span_lint(
-                crate::INCORRECT_ATTRIBUTE,
-                self.hir_id,
-                attr.span,
-                "invalid klint attribute",
-                |_| (),
-            );
+            self.tcx
+                .node_span_lint(crate::INCORRECT_ATTRIBUTE, self.hir_id, attr.span, |lint| {
+                    lint.primary_message("invalid klint attribute");
+                });
             return None;
         }
         match item.path.segments[1].ident.name {
@@ -444,8 +439,9 @@ impl<'tcx> AttrParser<'tcx> {
                     crate::INCORRECT_ATTRIBUTE,
                     self.hir_id,
                     item.path.segments[1].span(),
-                    "unrecognized klint attribute",
-                    |_| (),
+                    |lint| {
+                        lint.primary_message("unrecognized klint attribute");
+                    },
                 );
                 None
             }
