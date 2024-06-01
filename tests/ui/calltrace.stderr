@@ -1,5 +1,5 @@
-WARN klint::ctxt no klint metadata found for crate core
-WARN klint::ctxt no klint metadata found for crate alloc
+ WARN klint::ctxt no klint metadata found for crate core
+ WARN klint::ctxt no klint metadata found for crate alloc
 error: this call expects the preemption count to be 0
   --> $DIR/calltrace.rs:19:5
    |

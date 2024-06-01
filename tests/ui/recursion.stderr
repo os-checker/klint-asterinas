@@ -7,7 +7,7 @@ error: this function is recursive but preemption count expectation is not 0..
    = note: expectation is inferred to be 0
    = help: try annotate the function with `#[klint::preempt_count(expect = 0)]`
 
-WARN klint::ctxt no klint metadata found for crate alloc
-WARN klint::ctxt no klint metadata found for crate core
+ WARN klint::ctxt no klint metadata found for crate alloc
+ WARN klint::ctxt no klint metadata found for crate core
 error: aborting due to 1 previous error
 

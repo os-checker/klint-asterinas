@@ -1,4 +1,4 @@
-WARN klint::ctxt no klint metadata found for crate core
+ WARN klint::ctxt no klint metadata found for crate core
 error: cannot infer preemption count adjustment at this point
   --> $DIR/adjustment.rs:27:5
    |
