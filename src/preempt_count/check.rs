@@ -508,7 +508,7 @@ memoize!(
                     .predicates
                     .into_iter()
                     .filter_map(|(pred, _)| {
-                        pred.instantiate_supertrait(cx.tcx, &trait_ref)
+                        pred.instantiate_supertrait(cx.tcx, trait_ref)
                             .as_trait_clause()
                     });
                 for supertrait in super_traits {
