@@ -354,7 +354,7 @@ impl<'mir, 'tcx, 'cx> MirVisitor<'tcx> for MirNeighborVisitor<'mir, 'tcx, 'cx> {
         self.super_rvalue(rvalue, location);
     }
 
-    fn visit_constant(&mut self, constant: &mir::ConstOperand<'tcx>, location: Location) {
+    fn visit_const_operand(&mut self, constant: &mir::ConstOperand<'tcx>, location: Location) {
         if self.result.is_err() {
             return;
         }

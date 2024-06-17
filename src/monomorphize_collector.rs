@@ -587,7 +587,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
     /// This does not walk the constant, as it has been handled entirely here and trying
     /// to walk it would attempt to evaluate the `ty::Const` inside, which doesn't necessarily
     /// work, as some constants cannot be represented in the type system.
-    fn visit_constant(&mut self, constant: &mir::ConstOperand<'tcx>, location: Location) {
+    fn visit_const_operand(&mut self, constant: &mir::ConstOperand<'tcx>, location: Location) {
         let const_ = self.monomorphize(constant.const_);
         let param_env = ty::ParamEnv::reveal_all();
         let val = match const_.eval(self.tcx, param_env, constant.span) {
