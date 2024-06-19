@@ -720,7 +720,7 @@ memoize!(
 
         assert!(matches!(
             instance.def,
-            ty::InstanceDef::DropGlue(_, Some(_))
+            ty::InstanceKind::DropGlue(_, Some(_))
         ));
 
         if cx
@@ -757,16 +757,16 @@ memoize!(
 
         match instance.def {
             // Rust built-in intrinsics does not refer to anything else.
-            ty::InstanceDef::Intrinsic(_) => return Ok(()),
+            ty::InstanceKind::Intrinsic(_) => return Ok(()),
             // Empty drop glue, then it is a no-op.
-            ty::InstanceDef::DropGlue(_, None) => return Ok(()),
-            ty::InstanceDef::DropGlue(_, Some(ty)) => return cx.drop_check(param_env.and(ty)),
+            ty::InstanceKind::DropGlue(_, None) => return Ok(()),
+            ty::InstanceKind::DropGlue(_, Some(ty)) => return cx.drop_check(param_env.and(ty)),
             // Can't check further here. Will be checked at vtable generation site.
-            ty::InstanceDef::Virtual(_, _) => return Ok(()),
+            ty::InstanceKind::Virtual(_, _) => return Ok(()),
             _ => (),
         }
 
-        if matches!(instance.def, ty::InstanceDef::Item(_)) {
+        if matches!(instance.def, ty::InstanceKind::Item(_)) {
             let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));

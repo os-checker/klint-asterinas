@@ -261,14 +261,14 @@ impl<'tcx> AnalysisCtxt<'tcx> {
     ) -> Result<(), Error> {
         match instance.def {
             // No Rust built-in intrinsics will mess with preemption count.
-            ty::InstanceDef::Intrinsic(_) => unreachable!(),
+            ty::InstanceKind::Intrinsic(_) => unreachable!(),
             // Empty drop glue, then it definitely won't mess with preemption count.
-            ty::InstanceDef::DropGlue(_, None) => unreachable!(),
-            ty::InstanceDef::DropGlue(_, Some(ty)) => {
+            ty::InstanceKind::DropGlue(_, None) => unreachable!(),
+            ty::InstanceKind::DropGlue(_, Some(ty)) => {
                 return self.report_drop_expectation_error(param_env, ty, expected, span, diag);
             }
             // Checked by indirect checks
-            ty::InstanceDef::Virtual(def_id, _) => {
+            ty::InstanceKind::Virtual(def_id, _) => {
                 let exp = self
                     .preemption_count_annotation(def_id)
                     .expectation
@@ -808,7 +808,7 @@ memoize!(
 
         assert!(matches!(
             instance.def,
-            ty::InstanceDef::DropGlue(_, Some(_))
+            ty::InstanceKind::DropGlue(_, Some(_))
         ));
 
         if cx
@@ -930,7 +930,7 @@ memoize!(
 
         assert!(matches!(
             instance.def,
-            ty::InstanceDef::DropGlue(_, Some(_))
+            ty::InstanceKind::DropGlue(_, Some(_))
         ));
 
         let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), param_env, ty);
@@ -963,13 +963,13 @@ memoize!(
         let (param_env, instance) = poly_instance.into_parts();
         match instance.def {
             // No Rust built-in intrinsics will mess with preemption count.
-            ty::InstanceDef::Intrinsic(_) => return Ok(ExpectationRange::top()),
+            ty::InstanceKind::Intrinsic(_) => return Ok(ExpectationRange::top()),
             // Empty drop glue, then it definitely won't mess with preemption count.
-            ty::InstanceDef::DropGlue(_, None) => return Ok(ExpectationRange::top()),
-            ty::InstanceDef::DropGlue(_, Some(ty)) => {
+            ty::InstanceKind::DropGlue(_, None) => return Ok(ExpectationRange::top()),
+            ty::InstanceKind::DropGlue(_, Some(ty)) => {
                 return cx.drop_expectation(param_env.and(ty))
             }
-            ty::InstanceDef::Virtual(def_id, _) => {
+            ty::InstanceKind::Virtual(def_id, _) => {
                 if let Some(exp) = cx.preemption_count_annotation(def_id).expectation {
                     return Ok(exp);
                 }
@@ -980,7 +980,7 @@ memoize!(
         }
 
         let mut generic = false;
-        if matches!(instance.def, ty::InstanceDef::Item(_)) {
+        if matches!(instance.def, ty::InstanceKind::Item(_)) {
             let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
@@ -1123,19 +1123,19 @@ memoize!(
 
         match instance.def {
             // No Rust built-in intrinsics will mess with preemption count.
-            ty::InstanceDef::Intrinsic(_) => return Ok(()),
+            ty::InstanceKind::Intrinsic(_) => return Ok(()),
             // Empty drop glue, then it definitely won't mess with preemption count.
-            ty::InstanceDef::DropGlue(_, None) => return Ok(()),
-            ty::InstanceDef::DropGlue(_, Some(ty)) => {
+            ty::InstanceKind::DropGlue(_, None) => return Ok(()),
+            ty::InstanceKind::DropGlue(_, Some(ty)) => {
                 return cx.drop_expectation_check(param_env.and(ty))
             }
             // Checked by indirect checks
-            ty::InstanceDef::Virtual(_, _) => return Ok(()),
+            ty::InstanceKind::Virtual(_, _) => return Ok(()),
             _ => (),
         }
 
         // Prefer to do polymorphic check if possible.
-        if matches!(instance.def, ty::InstanceDef::Item(_)) {
+        if matches!(instance.def, ty::InstanceKind::Item(_)) {
             let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
@@ -1197,7 +1197,7 @@ memoize!(
         }
 
         // Addition check for trait impl methods.
-        if matches!(instance.def, ty::InstanceDef::Item(_))
+        if matches!(instance.def, ty::InstanceKind::Item(_))
             && let Some(impl_) = cx.impl_of_method(instance.def_id())
             && let Some(trait_) = cx.trait_id_of_impl(impl_)
         {

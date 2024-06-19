@@ -184,9 +184,9 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
     }
 
-    pub fn analysis_instance_mir(&self, instance: ty::InstanceDef<'tcx>) -> &'tcx Body<'tcx> {
+    pub fn analysis_instance_mir(&self, instance: ty::InstanceKind<'tcx>) -> &'tcx Body<'tcx> {
         match instance {
-            ty::InstanceDef::Item(did) => {
+            ty::InstanceKind::Item(did) => {
                 let def_kind = self.def_kind(did);
                 match def_kind {
                     DefKind::Const
@@ -198,19 +198,19 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     _ => self.analysis_mir(did),
                 }
             }
-            ty::InstanceDef::VTableShim(..)
-            | ty::InstanceDef::ReifyShim(..)
-            | ty::InstanceDef::Intrinsic(..)
-            | ty::InstanceDef::FnPtrShim(..)
-            | ty::InstanceDef::Virtual(..)
-            | ty::InstanceDef::ClosureOnceShim { .. }
-            | ty::InstanceDef::ConstructCoroutineInClosureShim { .. }
-            | ty::InstanceDef::CoroutineKindShim { .. }
-            | ty::InstanceDef::DropGlue(..)
-            | ty::InstanceDef::CloneShim(..)
-            | ty::InstanceDef::ThreadLocalShim(..)
-            | ty::InstanceDef::FnPtrAddrShim(..)
-            | ty::InstanceDef::AsyncDropGlueCtorShim(..) => self.mir_shims(instance),
+            ty::InstanceKind::VTableShim(..)
+            | ty::InstanceKind::ReifyShim(..)
+            | ty::InstanceKind::Intrinsic(..)
+            | ty::InstanceKind::FnPtrShim(..)
+            | ty::InstanceKind::Virtual(..)
+            | ty::InstanceKind::ClosureOnceShim { .. }
+            | ty::InstanceKind::ConstructCoroutineInClosureShim { .. }
+            | ty::InstanceKind::CoroutineKindShim { .. }
+            | ty::InstanceKind::DropGlue(..)
+            | ty::InstanceKind::CloneShim(..)
+            | ty::InstanceKind::ThreadLocalShim(..)
+            | ty::InstanceKind::FnPtrAddrShim(..)
+            | ty::InstanceKind::AsyncDropGlueCtorShim(..) => self.mir_shims(instance),
         }
     }
 }

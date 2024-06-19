@@ -727,31 +727,31 @@ fn visit_instance_use<'tcx>(
     );
 
     match instance.def {
-        ty::InstanceDef::Virtual(..) | ty::InstanceDef::Intrinsic(_) => {
+        ty::InstanceKind::Virtual(..) | ty::InstanceKind::Intrinsic(_) => {
             if !is_direct_call {
                 bug!("{:?} being reified", instance);
             }
         }
-        ty::InstanceDef::ThreadLocalShim(..) => {
+        ty::InstanceKind::ThreadLocalShim(..) => {
             bug!("{:?} being reified", instance);
         }
-        ty::InstanceDef::DropGlue(_, None) | ty::InstanceDef::AsyncDropGlueCtorShim(_, None) => {
+        ty::InstanceKind::DropGlue(_, None) | ty::InstanceKind::AsyncDropGlueCtorShim(_, None) => {
             // Don't need to emit noop drop glue if we are calling directly.
             if !is_direct_call {
                 output.push(create_fn_mono_item(tcx, instance, source));
             }
         }
-        ty::InstanceDef::DropGlue(_, Some(_))
-        | ty::InstanceDef::AsyncDropGlueCtorShim(_, Some(_))
-        | ty::InstanceDef::VTableShim(..)
-        | ty::InstanceDef::ReifyShim(..)
-        | ty::InstanceDef::ClosureOnceShim { .. }
-        | ty::InstanceDef::ConstructCoroutineInClosureShim { .. }
-        | ty::InstanceDef::CoroutineKindShim { .. }
-        | ty::InstanceDef::Item(..)
-        | ty::InstanceDef::FnPtrShim(..)
-        | ty::InstanceDef::CloneShim(..)
-        | ty::InstanceDef::FnPtrAddrShim(..) => {
+        ty::InstanceKind::DropGlue(_, Some(_))
+        | ty::InstanceKind::AsyncDropGlueCtorShim(_, Some(_))
+        | ty::InstanceKind::VTableShim(..)
+        | ty::InstanceKind::ReifyShim(..)
+        | ty::InstanceKind::ClosureOnceShim { .. }
+        | ty::InstanceKind::ConstructCoroutineInClosureShim { .. }
+        | ty::InstanceKind::CoroutineKindShim { .. }
+        | ty::InstanceKind::Item(..)
+        | ty::InstanceKind::FnPtrShim(..)
+        | ty::InstanceKind::CloneShim(..)
+        | ty::InstanceKind::FnPtrAddrShim(..) => {
             output.push(create_fn_mono_item(tcx, instance, source));
         }
     }

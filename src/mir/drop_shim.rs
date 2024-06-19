@@ -67,7 +67,7 @@ pub fn build_drop_shim<'tcx>(
     );
     block(&mut blocks, TerminatorKind::Return);
 
-    let source = MirSource::from_instance(ty::InstanceDef::DropGlue(def_id, Some(ty)));
+    let source = MirSource::from_instance(ty::InstanceKind::DropGlue(def_id, Some(ty)));
     let mut body = new_body(
         source,
         blocks,
