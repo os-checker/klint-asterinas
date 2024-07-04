@@ -255,8 +255,13 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
                         // This also avoids `TooGeneric` when def_id is an trait method.
                         Ok(v)
                     } else {
-                        match ty::Instance::resolve(self.checker.tcx, self.param_env, def_id, args)
-                            .unwrap()
+                        match ty::Instance::try_resolve(
+                            self.checker.tcx,
+                            self.param_env,
+                            def_id,
+                            args,
+                        )
+                        .unwrap()
                         {
                             Some(instance) => {
                                 self.checker.call_stack.borrow_mut().push(UseSite {

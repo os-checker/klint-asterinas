@@ -703,7 +703,7 @@ fn visit_fn_use<'tcx>(
 ) {
     if let ty::FnDef(def_id, args) = *ty.kind() {
         let instance = if is_direct_call {
-            ty::Instance::expect_resolve(tcx, ty::ParamEnv::reveal_all(), def_id, args)
+            ty::Instance::expect_resolve(tcx, ty::ParamEnv::reveal_all(), def_id, args, source)
         } else {
             match ty::Instance::resolve_for_fn_ptr(tcx, ty::ParamEnv::reveal_all(), def_id, args) {
                 Some(instance) => instance,
@@ -1079,7 +1079,7 @@ impl<'v> RootCollector<'_, 'v> {
             main_ret_ty.no_bound_vars().unwrap(),
         );
 
-        let start_instance = Instance::resolve(
+        let start_instance = Instance::try_resolve(
             self.tcx,
             ty::ParamEnv::reveal_all(),
             start_def_id,
@@ -1143,7 +1143,7 @@ fn create_mono_items_for_default_impls<'tcx>(
                 trait_ref.args[param.index as usize]
             }
         });
-        let instance = ty::Instance::expect_resolve(tcx, param_env, method.def_id, args);
+        let instance = ty::Instance::expect_resolve(tcx, param_env, method.def_id, args, DUMMY_SP);
 
         let mono_item = create_fn_mono_item(tcx, instance, DUMMY_SP);
         if mono_item.node.is_instantiable(tcx) {

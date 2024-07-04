@@ -162,9 +162,10 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 let fn_ty = operand.ty(self.body, self.cx.tcx);
                 let fn_ty = self.monomorphize(fn_ty);
                 if let ty::FnDef(def_id, args) = *fn_ty.kind() {
-                    let instance = ty::Instance::resolve(self.cx.tcx, self.param_env, def_id, args)
-                        .unwrap()
-                        .ok_or(Error::TooGeneric)?;
+                    let instance =
+                        ty::Instance::try_resolve(self.cx.tcx, self.param_env, def_id, args)
+                            .unwrap()
+                            .ok_or(Error::TooGeneric)?;
                     self.check_fn_pointer_cast(instance, span)?;
                 }
             }
@@ -255,9 +256,10 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 let callee_ty = self.monomorphize(callee_ty);
 
                 if let ty::FnDef(def_id, args) = *callee_ty.kind() {
-                    let instance = ty::Instance::resolve(self.cx.tcx, self.param_env, def_id, args)
-                        .unwrap()
-                        .ok_or(Error::TooGeneric)?;
+                    let instance =
+                        ty::Instance::try_resolve(self.cx.tcx, self.param_env, def_id, args)
+                            .unwrap()
+                            .ok_or(Error::TooGeneric)?;
                     self.cx.call_stack.borrow_mut().push(UseSite {
                         instance: self.param_env.and(self.instance),
                         kind: UseSiteKind::Call(span),
@@ -287,7 +289,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                         mir::InlineAsmOperand::SymFn { ref value } => {
                             let fn_ty = self.monomorphize(value.const_.ty());
                             if let ty::FnDef(def_id, args) = *fn_ty.kind() {
-                                let instance = ty::Instance::resolve(
+                                let instance = ty::Instance::try_resolve(
                                     self.cx.tcx,
                                     self.param_env,
                                     def_id,
@@ -538,7 +540,7 @@ memoize!(
                         continue;
                     }
 
-                    let instance = ty::Instance::resolve(cx.tcx, param_env, entry, args)
+                    let instance = ty::Instance::try_resolve(cx.tcx, param_env, entry, args)
                         .unwrap()
                         .ok_or(Error::TooGeneric)?;
                     let poly_instance = param_env.and(instance);
@@ -675,7 +677,7 @@ memoize!(
                 let drop_trait = cx.require_lang_item(LangItem::Drop, None);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
                 let box_free =
-                    ty::Instance::resolve(cx.tcx, param_env, drop_fn, cx.mk_args(&[ty.into()]))
+                    ty::Instance::try_resolve(cx.tcx, param_env, drop_fn, cx.mk_args(&[ty.into()]))
                         .unwrap()
                         .unwrap();
                 cx.instance_check(param_env.and(box_free))?;
@@ -713,7 +715,7 @@ memoize!(
         // Do not call `resolve_drop_in_place` because we need param_env.
         let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
         let args = cx.mk_args(&[ty.into()]);
-        let instance = ty::Instance::resolve(cx.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(cx.tcx, param_env, drop_in_place, args)
             .unwrap()
             .unwrap();
         let poly_instance = param_env.and(instance);
