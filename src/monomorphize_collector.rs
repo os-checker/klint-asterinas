@@ -1172,9 +1172,9 @@ fn collect_alloc<'tcx>(
                 });
             }
         }
-        GlobalAlloc::Function(fn_instance) => {
-            trace!("collecting {:?} with {:#?}", alloc_id, fn_instance);
-            output.push(create_fn_mono_item(tcx, fn_instance, DUMMY_SP));
+        GlobalAlloc::Function { instance, .. } => {
+            trace!("collecting {:?} with {:#?}", alloc_id, instance);
+            output.push(create_fn_mono_item(tcx, instance, DUMMY_SP));
         }
         GlobalAlloc::VTable(ty, trait_ref) => {
             let alloc_id = tcx.vtable_allocation((ty, trait_ref));
