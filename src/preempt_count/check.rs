@@ -508,8 +508,7 @@ memoize!(
             while let Some(trait_ref) = stack.pop() {
                 let super_traits = cx
                     .explicit_super_predicates_of(trait_ref.def_id())
-                    .predicates
-                    .into_iter()
+                    .iter_identity_copied()
                     .filter_map(|(pred, _)| {
                         pred.instantiate_supertrait(cx.tcx, trait_ref)
                             .as_trait_clause()

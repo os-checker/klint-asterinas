@@ -491,11 +491,13 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         body: &Body<'tcx>,
     ) -> Result<ExpectationRange, Error> {
         if false {
+            let options = rustc_middle::mir::pretty::PrettyPrintMirOptions::from_cli(self.tcx);
             rustc_middle::mir::pretty::write_mir_fn(
                 self.tcx,
                 body,
                 &mut |_, _| Ok(()),
                 &mut std::io::stderr(),
+                options,
             )
             .unwrap();
         }
