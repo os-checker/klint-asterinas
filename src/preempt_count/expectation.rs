@@ -361,18 +361,13 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
             ty::Tuple(_list) => (),
 
-            ty::Adt(def, args) if def.is_box() => {
-                let exp = self.drop_expectation(param_env.and(args.type_at(0)))?;
+            _ if let Some(boxed_ty) = ty.boxed_ty() => {
+                let exp = self.drop_expectation(param_env.and(boxed_ty))?;
                 if !exp.contains_range(expected) {
-                    return self.report_drop_expectation_error(
-                        param_env,
-                        args.type_at(0),
-                        expected,
-                        span,
-                        diag,
-                    );
+                    return self
+                        .report_drop_expectation_error(param_env, boxed_ty, expected, span, diag);
                 }
-                let adj = self.drop_adjustment(param_env.and(args.type_at(0)))?;
+                let adj = self.drop_adjustment(param_env.and(boxed_ty))?;
 
                 let drop_trait = self.require_lang_item(LangItem::Drop, None);
                 let drop_fn = self.associated_item_def_ids(drop_trait)[0];
@@ -675,8 +670,8 @@ memoize!(
 
             ty::Tuple(_list) => (),
 
-            ty::Adt(def, args) if def.is_box() => {
-                let exp = cx.drop_expectation(param_env.and(args.type_at(0)))?;
+            _ if let Some(boxed_ty) = ty.boxed_ty() => {
+                let exp = cx.drop_expectation(param_env.and(boxed_ty))?;
                 let drop_trait = cx.require_lang_item(LangItem::Drop, None);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
                 let box_free =
@@ -690,7 +685,7 @@ memoize!(
                     return Ok(exp);
                 }
 
-                let adj = cx.drop_adjustment(param_env.and(args.type_at(0)))?;
+                let adj = cx.drop_adjustment(param_env.and(boxed_ty))?;
                 let adj_bound = AdjustmentBounds::single_value(adj);
 
                 let mut expected = box_free_exp - adj_bound;
@@ -704,7 +699,7 @@ memoize!(
                         "but the possible preemption count after dropping the content is {}",
                         exp + adj_bound
                     ));
-                    diag.note(format!("content being dropped is `{}`", args.type_at(0)));
+                    diag.note(format!("content being dropped is `{}`", boxed_ty));
                     return Err(Error::Error(cx.emit_with_use_site_info(diag)));
                 }
 

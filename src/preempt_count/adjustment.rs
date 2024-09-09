@@ -373,8 +373,8 @@ memoize!(
                 return Ok(adj);
             }
 
-            ty::Adt(def, args) if def.is_box() => {
-                let adj = cx.drop_adjustment(param_env.and(args.type_at(0)))?;
+            _ if let Some(boxed_ty) = ty.boxed_ty() => {
+                let adj = cx.drop_adjustment(param_env.and(boxed_ty))?;
                 let drop_trait = cx.require_lang_item(LangItem::Drop, None);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
                 let box_free =
