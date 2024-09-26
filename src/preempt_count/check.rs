@@ -215,8 +215,8 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
             GlobalAlloc::Function { instance, .. } => {
                 self.check_fn_pointer_cast(instance, span)?;
             }
-            GlobalAlloc::VTable(ty, trait_ref) => {
-                self.check_vtable_construction(ty, trait_ref, span)?;
+            GlobalAlloc::VTable(ty, dyn_ty) => {
+                self.check_vtable_construction(ty, dyn_ty.principal(), span)?;
             }
         }
 
