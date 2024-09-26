@@ -129,11 +129,11 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
 
         match *rvalue {
             mir::Rvalue::Cast(
-                mir::CastKind::PointerCoercion(PointerCoercion::Unsize),
+                mir::CastKind::PointerCoercion(PointerCoercion::Unsize, _)
+                | mir::CastKind::PointerCoercion(PointerCoercion::DynStar, _),
                 ref operand,
                 target_ty,
-            )
-            | mir::Rvalue::Cast(mir::CastKind::DynStar, ref operand, target_ty) => {
+            ) => {
                 let target_ty = self.monomorphize(target_ty);
                 let source_ty = operand.ty(self.body, self.cx.tcx);
                 let source_ty = self.monomorphize(source_ty);
@@ -155,7 +155,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 }
             }
             mir::Rvalue::Cast(
-                mir::CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer),
+                mir::CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer, _),
                 ref operand,
                 _,
             ) => {
@@ -170,7 +170,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 }
             }
             mir::Rvalue::Cast(
-                mir::CastKind::PointerCoercion(PointerCoercion::ClosureFnPointer(_)),
+                mir::CastKind::PointerCoercion(PointerCoercion::ClosureFnPointer(_), _),
                 ref operand,
                 _,
             ) => {
