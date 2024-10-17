@@ -5,7 +5,7 @@
 use rustc_middle::mir::{BasicBlock, Body, TerminatorEdges, TerminatorKind};
 use rustc_middle::ty::{self, Instance, ParamEnv};
 use rustc_mir_dataflow::JoinSemiLattice;
-use rustc_mir_dataflow::{fmt::DebugWithContext, Analysis, AnalysisDomain};
+use rustc_mir_dataflow::{fmt::DebugWithContext, Analysis};
 
 use super::{Error, UseSite, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
@@ -199,7 +199,7 @@ pub struct AdjustmentComputation<'mir, 'tcx, 'checker> {
 
 impl DebugWithContext<AdjustmentComputation<'_, '_, '_>> for AdjustmentBoundsOrError {}
 
-impl<'tcx> AnalysisDomain<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
+impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     // The number here indicates the offset in relation to the function's entry point.
     type Domain = AdjustmentBoundsOrError;
 
@@ -215,9 +215,7 @@ impl<'tcx> AnalysisDomain<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
             hi: Some(1),
         });
     }
-}
 
-impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     fn apply_statement_effect(
         &mut self,
         _state: &mut Self::Domain,
