@@ -425,7 +425,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
                 let elem_adj = self.drop_adjustment(param_and_elem_ty)?;
                 let size = size
-                    .try_eval_target_usize(self.tcx, param_env)
+                    .normalize_internal(self.tcx, param_env)
+                    .try_to_target_usize(self.tcx)
                     .ok_or(Error::TooGeneric)?;
                 let Ok(size) = i32::try_from(size) else {
                     return Ok(());
@@ -743,7 +744,8 @@ memoize!(
 
             ty::Array(elem_ty, size) => {
                 let size = size
-                    .try_eval_target_usize(cx.tcx, param_env)
+                    .normalize_internal(cx.tcx, param_env)
+                    .try_to_target_usize(cx.tcx)
                     .ok_or(Error::TooGeneric);
                 if size == Ok(0) {
                     return Ok(ExpectationRange::top());

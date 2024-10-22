@@ -425,7 +425,8 @@ memoize!(
 
             ty::Array(elem_ty, size) => {
                 let size = size
-                    .try_eval_target_usize(cx.tcx, param_env)
+                    .normalize_internal(cx.tcx, param_env)
+                    .try_to_target_usize(cx.tcx)
                     .ok_or(Error::TooGeneric);
                 if size == Ok(0) {
                     return Ok(0);
