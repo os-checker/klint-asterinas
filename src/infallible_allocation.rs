@@ -5,7 +5,7 @@
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_lint::{LateContext, LateLintPass, LintContext};
 use rustc_middle::mir::mono::MonoItem;
-use rustc_middle::ty::{Instance, TyCtxt};
+use rustc_middle::ty::Instance;
 use rustc_session::{declare_lint_pass, declare_tool_lint};
 use rustc_span::source_map::Spanned;
 use rustc_span::symbol::sym;
@@ -20,12 +20,8 @@ declare_tool_lint! {
 
 declare_lint_pass!(InfallibleAllocation => [INFALLIBLE_ALLOCATION]);
 
-fn is_generic_fn<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool {
-    instance
-        .args
-        .non_erasable_generics(tcx, instance.def_id())
-        .next()
-        .is_some()
+fn is_generic_fn<'tcx>(instance: Instance<'tcx>) -> bool {
+    instance.args.non_erasable_generics().next().is_some()
 }
 
 impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
@@ -163,7 +159,7 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
                 let accessee = item.node;
 
                 if !accessee.def_id().is_local() && infallible.contains(&accessee) {
-                    let is_generic = is_generic_fn(cx.tcx, *accessor);
+                    let is_generic = is_generic_fn(*accessor);
                     let generic_note = if is_generic {
                         format!(
                             " when the caller is monomorphized as `{}`",
@@ -188,7 +184,7 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
                         let mut visited = FxHashSet::default();
                         visited.insert(*accessor);
                         visited.insert(accessee);
-                        while is_generic_fn(cx.tcx, caller) {
+                        while is_generic_fn(caller) {
                             let spanned_caller = match backward
                                 .get(&caller)
                                 .map(|x| &**x)
