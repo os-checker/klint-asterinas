@@ -287,8 +287,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             param_env,
             instance,
         }
-        .into_engine(self.tcx, body)
-        .iterate_to_fixpoint()
+        .iterate_to_fixpoint(self.tcx, body, None)
         .into_results_cursor(body);
 
         let mut adjustment = AdjustmentBoundsOrError::default();
