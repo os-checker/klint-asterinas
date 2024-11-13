@@ -6,10 +6,11 @@ use rustc_errors::{EmissionGuarantee, MultiSpan};
 use rustc_hir::def_id::CrateNum;
 use rustc_hir::LangItem;
 use rustc_middle::mir::{self, Body, TerminatorKind};
-use rustc_middle::ty::{self, GenericArgs, Instance, ParamEnv, ParamEnvAnd, Ty};
+use rustc_middle::ty::{self, GenericArgs, Instance, ParamEnv, ParamEnvAnd, Ty, TypingMode};
 use rustc_mir_dataflow::lattice::MeetSemiLattice;
 use rustc_mir_dataflow::Analysis;
 use rustc_span::DUMMY_SP;
+use rustc_trait_selection::infer::TyCtxtInferExt;
 
 use super::dataflow::AdjustmentComputation;
 use super::{AdjustmentBounds, Error, ExpectationRange, PolyDisplay, UseSite, UseSiteKind};
@@ -423,8 +424,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 }
 
                 let elem_adj = self.drop_adjustment(param_and_elem_ty)?;
-                let size = size
-                    .normalize_internal(self.tcx, param_env)
+                let infcx = self.tcx.infer_ctxt().build(TypingMode::PostAnalysis);
+                let size = rustc_trait_selection::traits::evaluate_const(&infcx, *size, param_env)
                     .try_to_target_usize(self.tcx)
                     .ok_or(Error::TooGeneric)?;
                 let Ok(size) = i32::try_from(size) else {
@@ -741,8 +742,8 @@ memoize!(
             }
 
             ty::Array(elem_ty, size) => {
-                let size = size
-                    .normalize_internal(cx.tcx, param_env)
+                let infcx = cx.tcx.infer_ctxt().build(TypingMode::PostAnalysis);
+                let size = rustc_trait_selection::traits::evaluate_const(&infcx, *size, param_env)
                     .try_to_target_usize(cx.tcx)
                     .ok_or(Error::TooGeneric);
                 if size == Ok(0) {

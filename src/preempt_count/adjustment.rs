@@ -6,9 +6,10 @@ use rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed, MultiSpan};
 use rustc_hir::def_id::{CrateNum, DefId};
 use rustc_hir::LangItem;
 use rustc_middle::mir::{Body, TerminatorKind, UnwindAction};
-use rustc_middle::ty::{self, GenericArgs, Instance, ParamEnv, ParamEnvAnd, Ty};
+use rustc_middle::ty::{self, GenericArgs, Instance, ParamEnv, ParamEnvAnd, Ty, TypingMode};
 use rustc_mir_dataflow::Analysis;
 use rustc_mir_dataflow::JoinSemiLattice;
+use rustc_trait_selection::infer::TyCtxtInferExt;
 
 use super::dataflow::{AdjustmentBoundsOrError, AdjustmentComputation};
 use super::{Error, PolyDisplay, UseSiteKind};
@@ -423,8 +424,8 @@ memoize!(
             }
 
             ty::Array(elem_ty, size) => {
-                let size = size
-                    .normalize_internal(cx.tcx, param_env)
+                let infcx = cx.tcx.infer_ctxt().build(TypingMode::PostAnalysis);
+                let size = rustc_trait_selection::traits::evaluate_const(&infcx, *size, param_env)
                     .try_to_target_usize(cx.tcx)
                     .ok_or(Error::TooGeneric);
                 if size == Ok(0) {
