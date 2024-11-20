@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use rustc_middle::mir::{BasicBlock, Body, TerminatorEdges, TerminatorKind};
-use rustc_middle::ty::{self, Instance, ParamEnv};
+use rustc_middle::ty::{self, Instance, TypingEnv};
 use rustc_mir_dataflow::JoinSemiLattice;
 use rustc_mir_dataflow::{fmt::DebugWithContext, Analysis};
 
@@ -193,7 +193,7 @@ impl JoinSemiLattice for AdjustmentBoundsOrError {
 pub struct AdjustmentComputation<'mir, 'tcx, 'checker> {
     pub checker: &'checker AnalysisCtxt<'tcx>,
     pub body: &'mir Body<'tcx>,
-    pub param_env: ParamEnv<'tcx>,
+    pub typing_env: TypingEnv<'tcx>,
     pub instance: Instance<'tcx>,
 }
 
@@ -244,7 +244,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
                 let callee_ty = func.ty(self.body, self.checker.tcx);
                 let callee_ty = self.instance.instantiate_mir_and_normalize_erasing_regions(
                     self.checker.tcx,
-                    self.param_env,
+                    self.typing_env,
                     ty::EarlyBinder::bind(callee_ty),
                 );
                 if let ty::FnDef(def_id, args) = *callee_ty.kind() {
@@ -255,7 +255,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
                     } else {
                         match ty::Instance::try_resolve(
                             self.checker.tcx,
-                            self.param_env,
+                            self.typing_env,
                             def_id,
                             args,
                         )
@@ -263,12 +263,12 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
                         {
                             Some(instance) => {
                                 self.checker.call_stack.borrow_mut().push(UseSite {
-                                    instance: self.param_env.and(self.instance),
+                                    instance: self.typing_env.as_query_input(self.instance),
                                     kind: UseSiteKind::Call(terminator.source_info.span),
                                 });
                                 let result = self
                                     .checker
-                                    .instance_adjustment(self.param_env.and(instance));
+                                    .instance_adjustment(self.typing_env.as_query_input(instance));
                                 self.checker.call_stack.borrow_mut().pop();
                                 result
                             }
@@ -283,18 +283,20 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
                 let ty = place.ty(self.body, self.checker.tcx).ty;
                 let ty = self.instance.instantiate_mir_and_normalize_erasing_regions(
                     self.checker.tcx,
-                    self.param_env,
+                    self.typing_env,
                     ty::EarlyBinder::bind(ty),
                 );
 
                 self.checker.call_stack.borrow_mut().push(UseSite {
-                    instance: self.param_env.and(self.instance),
+                    instance: self.typing_env.as_query_input(self.instance),
                     kind: UseSiteKind::Drop {
                         drop_span: terminator.source_info.span,
                         place_span: self.body.local_decls[place.local].source_info.span,
                     },
                 });
-                let result = self.checker.drop_adjustment(self.param_env.and(ty));
+                let result = self
+                    .checker
+                    .drop_adjustment(self.typing_env.as_query_input(ty));
                 self.checker.call_stack.borrow_mut().pop();
                 result
             }

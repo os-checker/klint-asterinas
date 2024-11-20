@@ -5,7 +5,7 @@
 use rustc_hir::def_id::LocalDefId;
 use rustc_lint::{LateContext, LateLintPass};
 use rustc_middle::mir::mono::MonoItem;
-use rustc_middle::ty::{GenericArgs, Instance, ParamEnv, TyCtxt};
+use rustc_middle::ty::{GenericArgs, Instance, TyCtxt, TypingEnv};
 use rustc_session::{declare_tool_lint, impl_lint_pass};
 use rustc_span::Span;
 
@@ -402,13 +402,10 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
             .tcx
             .erase_regions(GenericArgs::identity_for_item(self.cx.tcx, def_id));
         let instance = Instance::new(def_id.into(), identity);
-        let param_and_instance = self
-            .cx
-            .param_env_reveal_all_normalized(def_id)
-            .and(instance);
-        let _ = self.cx.instance_adjustment(param_and_instance);
-        let _ = self.cx.instance_expectation(param_and_instance);
-        let _ = self.cx.instance_check(param_and_instance);
+        let poly_instance = TypingEnv::post_analysis(*self.cx, def_id).as_query_input(instance);
+        let _ = self.cx.instance_adjustment(poly_instance);
+        let _ = self.cx.instance_expectation(poly_instance);
+        let _ = self.cx.instance_check(poly_instance);
     }
 
     fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
@@ -420,11 +417,11 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
 
         for mono_item in mono_items {
             if let MonoItem::Fn(instance) = mono_item {
-                let param_and_instance = ParamEnv::reveal_all().and(instance);
-                if let Err(Error::TooGeneric) = self.cx.instance_adjustment(param_and_instance) {
+                let poly_instance = TypingEnv::fully_monomorphized().as_query_input(instance);
+                if let Err(Error::TooGeneric) = self.cx.instance_adjustment(poly_instance) {
                     bug!("monomorphized function should not be too generic");
                 }
-                if let Err(Error::TooGeneric) = self.cx.instance_expectation(param_and_instance) {
+                if let Err(Error::TooGeneric) = self.cx.instance_expectation(poly_instance) {
                     bug!("monomorphized function should not be too generic");
                 }
             }

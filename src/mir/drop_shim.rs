@@ -9,7 +9,7 @@ use rustc_hir::def_id::DefId;
 use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir::patch::MirPatch;
 use rustc_middle::mir::*;
-use rustc_middle::ty::{self, EarlyBinder, ParamEnv, Ty, TyCtxt};
+use rustc_middle::ty::{self, EarlyBinder, Ty, TyCtxt, TypingEnv};
 use rustc_mir_dataflow::elaborate_drops::{self, *};
 use rustc_span::Span;
 use rustc_target::abi::{FieldIdx, VariantIdx};
@@ -34,7 +34,7 @@ fn local_decls_for_sig<'tcx>(
 pub fn build_drop_shim<'tcx>(
     cx: &AnalysisCtxt<'tcx>,
     def_id: DefId,
-    param_env: ParamEnv<'tcx>,
+    typing_env: TypingEnv<'tcx>,
     ty: Ty<'tcx>,
 ) -> Body<'tcx> {
     if let ty::Coroutine(gen_def_id, args) = ty.kind() {
@@ -83,7 +83,7 @@ pub fn build_drop_shim<'tcx>(
             body: &body,
             patch: MirPatch::new(&body),
             tcx: cx.tcx,
-            param_env,
+            typing_env,
         };
         let dropee = cx.mk_place_deref(dropee_ptr);
         let resume_block = elaborator.patch.resume_block();
@@ -137,7 +137,7 @@ pub struct DropShimElaborator<'a, 'tcx> {
     pub body: &'a Body<'tcx>,
     pub patch: MirPatch<'tcx>,
     pub tcx: TyCtxt<'tcx>,
-    pub param_env: ty::ParamEnv<'tcx>,
+    pub typing_env: ty::TypingEnv<'tcx>,
 }
 
 impl fmt::Debug for DropShimElaborator<'_, '_> {
@@ -158,8 +158,8 @@ impl<'a, 'tcx> DropElaborator<'a, 'tcx> for DropShimElaborator<'a, 'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
-    fn param_env(&self) -> ty::ParamEnv<'tcx> {
-        self.param_env
+    fn typing_env(&self) -> ty::TypingEnv<'tcx> {
+        self.typing_env
     }
 
     fn drop_style(&self, _path: Self::Path, mode: DropFlagMode) -> DropStyle {

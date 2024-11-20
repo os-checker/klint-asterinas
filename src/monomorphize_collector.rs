@@ -39,7 +39,7 @@ use std::path::PathBuf;
 // From rustc_monomorphize/lib.rs
 fn custom_coerce_unsize_info<'tcx>(
     tcx: TyCtxtAt<'tcx>,
-    param_env: ty::ParamEnv<'tcx>,
+    typing_env: ty::TypingEnv<'tcx>,
     source_ty: Ty<'tcx>,
     target_ty: Ty<'tcx>,
 ) -> Result<CustomCoerceUnsized, ErrorGuaranteed> {
@@ -49,7 +49,7 @@ fn custom_coerce_unsize_info<'tcx>(
         [source_ty, target_ty],
     );
 
-    match tcx.codegen_select_candidate((param_env, trait_ref)) {
+    match tcx.codegen_select_candidate(typing_env.as_query_input(trait_ref)) {
         Ok(traits::ImplSource::UserDefined(traits::ImplSourceUserDefinedData {
             impl_def_id,
             ..
@@ -250,7 +250,7 @@ fn collect_items_rec<'tcx>(
             // Sanity check whether this ended up being collected accidentally
             debug_assert!(should_codegen_locally(tcx, &instance));
 
-            let ty = instance.ty(tcx, ty::ParamEnv::reveal_all());
+            let ty = instance.ty(tcx, ty::TypingEnv::fully_monomorphized());
             visit_drop_use(tcx, ty, true, starting_item.span, &mut used_items);
 
             recursion_depth_reset = None;
@@ -497,7 +497,7 @@ impl<'a, 'tcx> MirUsedCollector<'a, 'tcx> {
         debug!("monomorphize: self.instance={:?}", self.instance);
         self.instance.instantiate_mir_and_normalize_erasing_regions(
             self.tcx,
-            ty::ParamEnv::reveal_all(),
+            ty::TypingEnv::fully_monomorphized(),
             ty::EarlyBinder::bind(value),
         )
     }
@@ -524,7 +524,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
                 let source_ty = self.monomorphize(source_ty);
                 let (source_ty, target_ty) = find_vtable_types_for_unsizing(
                     self.tcx.at(span),
-                    ty::ParamEnv::reveal_all(),
+                    ty::TypingEnv::fully_monomorphized(),
                     source_ty,
                     target_ty,
                 );
@@ -589,8 +589,8 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
     /// work, as some constants cannot be represented in the type system.
     fn visit_const_operand(&mut self, constant: &mir::ConstOperand<'tcx>, location: Location) {
         let const_ = self.monomorphize(constant.const_);
-        let param_env = ty::ParamEnv::reveal_all();
-        let val = match const_.eval(self.tcx, param_env, constant.span) {
+        let typing_env = ty::TypingEnv::fully_monomorphized();
+        let val = match const_.eval(self.tcx, typing_env, constant.span) {
             Ok(v) => v,
             Err(ErrorHandled::TooGeneric(..)) => span_bug!(
                 self.body.source_info(location).span,
@@ -704,9 +704,20 @@ fn visit_fn_use<'tcx>(
 ) {
     if let ty::FnDef(def_id, args) = *ty.kind() {
         let instance = if is_direct_call {
-            ty::Instance::expect_resolve(tcx, ty::ParamEnv::reveal_all(), def_id, args, source)
+            ty::Instance::expect_resolve(
+                tcx,
+                ty::TypingEnv::fully_monomorphized(),
+                def_id,
+                args,
+                source,
+            )
         } else {
-            match ty::Instance::resolve_for_fn_ptr(tcx, ty::ParamEnv::reveal_all(), def_id, args) {
+            match ty::Instance::resolve_for_fn_ptr(
+                tcx,
+                ty::TypingEnv::fully_monomorphized(),
+                def_id,
+                args,
+            ) {
                 Some(instance) => instance,
                 _ => bug!("failed to resolve instance for {ty}"),
             }
@@ -839,16 +850,16 @@ pub fn should_codegen_locally<'tcx>(tcx: TyCtxt<'tcx>, instance: &Instance<'tcx>
 /// smart pointers such as `Rc` and `Arc`.
 pub fn find_vtable_types_for_unsizing<'tcx>(
     tcx: TyCtxtAt<'tcx>,
-    param_env: ty::ParamEnv<'tcx>,
+    typing_env: ty::TypingEnv<'tcx>,
     source_ty: Ty<'tcx>,
     target_ty: Ty<'tcx>,
 ) -> (Ty<'tcx>, Ty<'tcx>) {
     let ptr_vtable = |inner_source: Ty<'tcx>, inner_target: Ty<'tcx>| {
         let type_has_metadata = |ty: Ty<'tcx>| -> bool {
-            if ty.is_sized(tcx.tcx, param_env) {
+            if ty.is_sized(tcx.tcx, typing_env.param_env) {
                 return false;
             }
-            let tail = tcx.struct_tail_for_codegen(ty, param_env);
+            let tail = tcx.struct_tail_for_codegen(ty, typing_env);
             match tail.kind() {
                 ty::Foreign(..) => false,
                 ty::Str | ty::Slice(..) | ty::Dynamic(..) => true,
@@ -858,7 +869,7 @@ pub fn find_vtable_types_for_unsizing<'tcx>(
         if type_has_metadata(inner_source) {
             (inner_source, inner_target)
         } else {
-            tcx.struct_lockstep_tails_for_codegen(inner_source, inner_target, param_env)
+            tcx.struct_lockstep_tails_for_codegen(inner_source, inner_target, typing_env)
         }
     };
 
@@ -879,7 +890,7 @@ pub fn find_vtable_types_for_unsizing<'tcx>(
             assert_eq!(source_adt_def, target_adt_def);
 
             let CustomCoerceUnsized::Struct(coerce_index) =
-                match custom_coerce_unsize_info(tcx, param_env, source_ty, target_ty) {
+                match custom_coerce_unsize_info(tcx, typing_env, source_ty, target_ty) {
                     Ok(ccu) => ccu,
                     Err(e) => {
                         let e = Ty::new_error(tcx.tcx, e);
@@ -897,7 +908,7 @@ pub fn find_vtable_types_for_unsizing<'tcx>(
 
             find_vtable_types_for_unsizing(
                 tcx,
-                param_env,
+                typing_env,
                 source_fields[coerce_index].ty(*tcx, source_args),
                 target_fields[coerce_index].ty(*tcx, target_args),
             )
@@ -980,7 +991,7 @@ impl<'v> RootCollector<'_, 'v> {
 
                     let item = self.tcx.hir().item(id);
                     let ty = Instance::new(item.owner_id.to_def_id(), GenericArgs::empty())
-                        .ty(self.tcx, ty::ParamEnv::reveal_all());
+                        .ty(self.tcx, ty::TypingEnv::fully_monomorphized());
                     visit_drop_use(self.tcx, ty, true, DUMMY_SP, self.output);
                 }
             }
@@ -1078,13 +1089,13 @@ impl<'v> RootCollector<'_, 'v> {
         // regions must appear in the argument
         // listing.
         let main_ret_ty = self.tcx.normalize_erasing_regions(
-            ty::ParamEnv::reveal_all(),
+            ty::TypingEnv::fully_monomorphized(),
             main_ret_ty.no_bound_vars().unwrap(),
         );
 
         let start_instance = Instance::try_resolve(
             self.tcx,
-            ty::ParamEnv::reveal_all(),
+            ty::TypingEnv::fully_monomorphized(),
             start_def_id,
             self.tcx.mk_args(&[main_ret_ty.into()]),
         )
@@ -1124,8 +1135,8 @@ fn create_mono_items_for_default_impls<'tcx>(
 
     let trait_ref = trait_ref.instantiate_identity();
 
-    let param_env = ty::ParamEnv::reveal_all();
-    let trait_ref = tcx.normalize_erasing_regions(param_env, trait_ref);
+    let typing_env = ty::TypingEnv::fully_monomorphized();
+    let trait_ref = tcx.normalize_erasing_regions(typing_env, trait_ref);
     let overridden_methods = tcx.impl_item_implementor_ids(item.owner_id);
 
     for method in tcx.provided_trait_methods(trait_ref.def_id) {
@@ -1146,7 +1157,7 @@ fn create_mono_items_for_default_impls<'tcx>(
                 trait_ref.args[param.index as usize]
             }
         });
-        let instance = ty::Instance::expect_resolve(tcx, param_env, method.def_id, args, DUMMY_SP);
+        let instance = ty::Instance::expect_resolve(tcx, typing_env, method.def_id, args, DUMMY_SP);
 
         let mono_item = create_fn_mono_item(tcx, instance, DUMMY_SP);
         if mono_item.node.is_instantiable(tcx) {

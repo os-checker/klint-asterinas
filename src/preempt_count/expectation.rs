@@ -6,7 +6,9 @@ use rustc_errors::{EmissionGuarantee, MultiSpan};
 use rustc_hir::def_id::CrateNum;
 use rustc_hir::LangItem;
 use rustc_middle::mir::{self, Body, TerminatorKind};
-use rustc_middle::ty::{self, GenericArgs, Instance, ParamEnv, ParamEnvAnd, Ty, TypingMode};
+use rustc_middle::ty::{
+    self, GenericArgs, Instance, PseudoCanonicalInput, Ty, TypingEnv, TypingMode,
+};
 use rustc_mir_dataflow::lattice::MeetSemiLattice;
 use rustc_mir_dataflow::Analysis;
 use rustc_span::DUMMY_SP;
@@ -19,7 +21,7 @@ use crate::ctxt::AnalysisCtxt;
 impl<'tcx> AnalysisCtxt<'tcx> {
     pub fn terminator_expectation(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
         terminator: &mir::Terminator<'tcx>,
@@ -29,7 +31,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 let callee_ty = func.ty(body, self.tcx);
                 let callee_ty = instance.instantiate_mir_and_normalize_erasing_regions(
                     self.tcx,
-                    param_env,
+                    typing_env,
                     ty::EarlyBinder::bind(callee_ty),
                 );
                 if let ty::FnDef(def_id, args) = *callee_ty.kind() {
@@ -39,14 +41,15 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                         v
                     } else {
                         let callee_instance =
-                            ty::Instance::try_resolve(self.tcx, param_env, def_id, args)
+                            ty::Instance::try_resolve(self.tcx, typing_env, def_id, args)
                                 .unwrap()
                                 .ok_or(Error::TooGeneric)?;
                         self.call_stack.borrow_mut().push(UseSite {
-                            instance: param_env.and(instance),
+                            instance: typing_env.as_query_input(instance),
                             kind: UseSiteKind::Call(terminator.source_info.span),
                         });
-                        let result = self.instance_expectation(param_env.and(callee_instance));
+                        let result =
+                            self.instance_expectation(typing_env.as_query_input(callee_instance));
                         self.call_stack.borrow_mut().pop();
                         result?
                     }
@@ -58,18 +61,18 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 let ty = place.ty(body, self.tcx).ty;
                 let ty = instance.instantiate_mir_and_normalize_erasing_regions(
                     self.tcx,
-                    param_env,
+                    typing_env,
                     ty::EarlyBinder::bind(ty),
                 );
 
                 self.call_stack.borrow_mut().push(UseSite {
-                    instance: param_env.and(instance),
+                    instance: typing_env.as_query_input(instance),
                     kind: UseSiteKind::Drop {
                         drop_span: terminator.source_info.span,
                         place_span: body.local_decls[place.local].source_info.span,
                     },
                 });
-                let result = self.drop_expectation(param_env.and(ty));
+                let result = self.drop_expectation(typing_env.as_query_input(ty));
                 self.call_stack.borrow_mut().pop();
                 result?
             }
@@ -77,10 +80,10 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         })
     }
 
-    #[instrument(skip(self, param_env, body, diag), fields(instance = %PolyDisplay(&param_env.and(instance))), ret)]
+    #[instrument(skip(self, typing_env, body, diag), fields(instance = %PolyDisplay(&typing_env.as_query_input(instance))), ret)]
     pub fn report_body_expectation_error<G: EmissionGuarantee>(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
         expected: ExpectationRange,
@@ -90,7 +93,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         let mut analysis_result = AdjustmentComputation {
             checker: self,
             body,
-            param_env,
+            typing_env,
             instance,
         }
         .iterate_to_fixpoint(self.tcx, body, None)
@@ -102,7 +105,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             }
 
             let expectation =
-                self.terminator_expectation(param_env, instance, body, data.terminator())?;
+                self.terminator_expectation(typing_env, instance, body, data.terminator())?;
 
             // Special case for no expectation at all. No need to check adjustment here.
             if expectation == ExpectationRange::top() {
@@ -126,7 +129,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     let callee_ty = func.ty(body, self.tcx);
                     let callee_ty = instance.instantiate_mir_and_normalize_erasing_regions(
                         self.tcx,
-                        param_env,
+                        typing_env,
                         ty::EarlyBinder::bind(callee_ty),
                     );
                     if let ty::FnDef(def_id, args) = *callee_ty.kind() {
@@ -149,7 +152,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                             return Ok(());
                         } else {
                             let callee_instance =
-                                ty::Instance::try_resolve(self.tcx, param_env, def_id, args)
+                                ty::Instance::try_resolve(self.tcx, typing_env, def_id, args)
                                     .unwrap()
                                     .ok_or(Error::TooGeneric)?;
 
@@ -173,11 +176,11 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                             }
 
                             self.call_stack.borrow_mut().push(UseSite {
-                                instance: param_env.and(instance),
+                                instance: typing_env.as_query_input(instance),
                                 kind: UseSiteKind::Call(span.primary_span().unwrap_or(DUMMY_SP)),
                             });
                             let result = self.report_instance_expectation_error(
-                                param_env,
+                                typing_env,
                                 callee_instance,
                                 call_expected,
                                 span,
@@ -214,12 +217,12 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     let ty = place.ty(body, self.tcx).ty;
                     let ty = instance.instantiate_mir_and_normalize_erasing_regions(
                         self.tcx,
-                        param_env,
+                        typing_env,
                         ty::EarlyBinder::bind(ty),
                     );
 
                     self.call_stack.borrow_mut().push(UseSite {
-                        instance: param_env.and(instance),
+                        instance: typing_env.as_query_input(instance),
                         kind: UseSiteKind::Drop {
                             drop_span: data.terminator().source_info.span,
                             place_span: body.local_decls[place.local].source_info.span,
@@ -227,7 +230,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     });
 
                     let result = self.report_drop_expectation_error(
-                        param_env,
+                        typing_env,
                         ty,
                         call_expected,
                         span,
@@ -253,7 +256,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
     // Must only be called on instances that actually are errors.
     pub fn report_instance_expectation_error<G: EmissionGuarantee>(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         expected: ExpectationRange,
         span: MultiSpan,
@@ -265,7 +268,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => unreachable!(),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return self.report_drop_expectation_error(param_env, ty, expected, span, diag);
+                return self.report_drop_expectation_error(typing_env, ty, expected, span, diag);
             }
             // Checked by indirect checks
             ty::InstanceKind::Virtual(def_id, _) => {
@@ -307,7 +310,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
         // Only check locally codegenned instances.
         if !crate::monomorphize_collector::should_codegen_locally(self.tcx, &instance) {
-            let expectation = self.instance_expectation(param_env.and(instance))?;
+            let expectation = self.instance_expectation(typing_env.as_query_input(instance))?;
             diag.span_note(
                 span,
                 format!(
@@ -331,24 +334,24 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         );
 
         let body = self.analysis_instance_mir(instance.def);
-        self.report_body_expectation_error(param_env, instance, body, expected, None, diag)
+        self.report_body_expectation_error(typing_env, instance, body, expected, None, diag)
     }
 
     pub fn report_drop_expectation_error<G: EmissionGuarantee>(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         ty: Ty<'tcx>,
         expected: ExpectationRange,
         span: MultiSpan,
         diag: &mut rustc_errors::Diag<'_, G>,
     ) -> Result<(), Error> {
         // If the type doesn't need drop, then there is trivially no expectation.
-        assert!(ty.needs_drop(self.tcx, param_env));
+        assert!(ty.needs_drop(self.tcx, typing_env));
 
         match ty.kind() {
             ty::Closure(_, args) => {
                 return self.report_drop_expectation_error(
-                    param_env,
+                    typing_env,
                     args.as_closure().tupled_upvars_ty(),
                     expected,
                     span,
@@ -362,25 +365,25 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             ty::Tuple(_list) => (),
 
             _ if let Some(boxed_ty) = ty.boxed_ty() => {
-                let exp = self.drop_expectation(param_env.and(boxed_ty))?;
+                let exp = self.drop_expectation(typing_env.as_query_input(boxed_ty))?;
                 if !exp.contains_range(expected) {
                     return self
-                        .report_drop_expectation_error(param_env, boxed_ty, expected, span, diag);
+                        .report_drop_expectation_error(typing_env, boxed_ty, expected, span, diag);
                 }
-                let adj = self.drop_adjustment(param_env.and(boxed_ty))?;
+                let adj = self.drop_adjustment(typing_env.as_query_input(boxed_ty))?;
 
                 let drop_trait = self.require_lang_item(LangItem::Drop, None);
                 let drop_fn = self.associated_item_def_ids(drop_trait)[0];
                 let box_free = ty::Instance::try_resolve(
                     self.tcx,
-                    param_env,
+                    typing_env,
                     drop_fn,
                     self.mk_args(&[ty.into()]),
                 )
                 .unwrap()
                 .unwrap();
                 return self.report_instance_expectation_error(
-                    param_env,
+                    typing_env,
                     box_free,
                     expected + AdjustmentBounds::single_value(adj),
                     span,
@@ -416,18 +419,22 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             }
 
             ty::Array(elem_ty, size) => {
-                let param_and_elem_ty = param_env.and(*elem_ty);
+                let param_and_elem_ty = typing_env.as_query_input(*elem_ty);
                 let elem_exp = self.drop_expectation(param_and_elem_ty)?;
                 if !elem_exp.contains_range(expected) {
                     return self
-                        .report_drop_expectation_error(param_env, *elem_ty, expected, span, diag);
+                        .report_drop_expectation_error(typing_env, *elem_ty, expected, span, diag);
                 }
 
                 let elem_adj = self.drop_adjustment(param_and_elem_ty)?;
                 let infcx = self.tcx.infer_ctxt().build(TypingMode::PostAnalysis);
-                let size = rustc_trait_selection::traits::evaluate_const(&infcx, *size, param_env)
-                    .try_to_target_usize(self.tcx)
-                    .ok_or(Error::TooGeneric)?;
+                let size = rustc_trait_selection::traits::evaluate_const(
+                    &infcx,
+                    *size,
+                    typing_env.param_env,
+                )
+                .try_to_target_usize(self.tcx)
+                .ok_or(Error::TooGeneric)?;
                 let Ok(size) = i32::try_from(size) else {
                     return Ok(());
                 };
@@ -436,7 +443,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 };
                 let last_adj_bound = AdjustmentBounds::single_value(last_adj);
                 return self.report_drop_expectation_error(
-                    param_env,
+                    typing_env,
                     *elem_ty,
                     expected + last_adj_bound,
                     span,
@@ -446,7 +453,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
             ty::Slice(elem_ty) => {
                 return self
-                    .report_drop_expectation_error(param_env, *elem_ty, expected, span, diag);
+                    .report_drop_expectation_error(typing_env, *elem_ty, expected, span, diag);
             }
 
             _ => unreachable!(),
@@ -456,22 +463,22 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             span,
             format!(
                 "which may drop type `{}` with preemption count {}",
-                PolyDisplay(&param_env.and(ty)),
+                PolyDisplay(&typing_env.as_query_input(ty)),
                 expected,
             ),
         );
         let span = MultiSpan::new();
 
-        // Do not call `resolve_drop_in_place` because we need param_env.
+        // Do not call `resolve_drop_in_place` because we need typing_env.
         let drop_in_place = self.require_lang_item(LangItem::DropInPlace, None);
         let args = self.mk_args(&[ty.into()]);
-        let instance = ty::Instance::try_resolve(self.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(self.tcx, typing_env, drop_in_place, args)
             .unwrap()
             .unwrap();
 
-        let mir = crate::mir::drop_shim::build_drop_shim(self, instance.def_id(), param_env, ty);
+        let mir = crate::mir::drop_shim::build_drop_shim(self, instance.def_id(), typing_env, ty);
         return self.report_body_expectation_error(
-            param_env,
+            typing_env,
             instance,
             &mir,
             expected,
@@ -482,7 +489,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub fn do_infer_expectation(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
     ) -> Result<ExpectationRange, Error> {
@@ -501,7 +508,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         let mut analysis_result = AdjustmentComputation {
             checker: self,
             body,
-            param_env,
+            typing_env,
             instance,
         }
         .iterate_to_fixpoint(self.tcx, body, None)
@@ -518,7 +525,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     let callee_ty = func.ty(body, self.tcx);
                     let callee_ty = instance.instantiate_mir_and_normalize_erasing_regions(
                         self.tcx,
-                        param_env,
+                        typing_env,
                         ty::EarlyBinder::bind(callee_ty),
                     );
                     if let ty::FnDef(def_id, args) = *callee_ty.kind() {
@@ -528,14 +535,15 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                             v
                         } else {
                             let callee_instance =
-                                ty::Instance::try_resolve(self.tcx, param_env, def_id, args)
+                                ty::Instance::try_resolve(self.tcx, typing_env, def_id, args)
                                     .unwrap()
                                     .ok_or(Error::TooGeneric)?;
                             self.call_stack.borrow_mut().push(UseSite {
-                                instance: param_env.and(instance),
+                                instance: typing_env.as_query_input(instance),
                                 kind: UseSiteKind::Call(data.terminator().source_info.span),
                             });
-                            let result = self.instance_expectation(param_env.and(callee_instance));
+                            let result = self
+                                .instance_expectation(typing_env.as_query_input(callee_instance));
                             self.call_stack.borrow_mut().pop();
                             result?
                         }
@@ -547,18 +555,18 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     let ty = place.ty(body, self.tcx).ty;
                     let ty = instance.instantiate_mir_and_normalize_erasing_regions(
                         self.tcx,
-                        param_env,
+                        typing_env,
                         ty::EarlyBinder::bind(ty),
                     );
 
                     self.call_stack.borrow_mut().push(UseSite {
-                        instance: param_env.and(instance),
+                        instance: typing_env.as_query_input(instance),
                         kind: UseSiteKind::Drop {
                             drop_span: data.terminator().source_info.span,
                             place_span: body.local_decls[place.local].source_info.span,
                         },
                     });
-                    let result = self.drop_expectation(param_env.and(ty));
+                    let result = self.drop_expectation(typing_env.as_query_input(ty));
                     self.call_stack.borrow_mut().pop();
                     result?
                 }
@@ -604,7 +612,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     let ty = place.ty(body, self.tcx).ty;
                     let ty = instance.instantiate_mir_and_normalize_erasing_regions(
                         self.tcx,
-                        param_env,
+                        typing_env,
                         ty::EarlyBinder::bind(ty),
                     );
                     diag.span_label(span, format!("the type being dropped is `{ty}`"));
@@ -627,7 +635,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub fn infer_expectation(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
     ) -> Result<ExpectationRange, Error> {
@@ -637,12 +645,12 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         {
             self.emit_with_use_site_info(self.dcx().struct_fatal(format!(
                 "reached the recursion limit while checking expectation for `{}`",
-                PolyDisplay(&param_env.and(instance))
+                PolyDisplay(&typing_env.as_query_input(instance))
             )));
         }
 
         rustc_data_structures::stack::ensure_sufficient_stack(|| {
-            self.do_infer_expectation(param_env, instance, body)
+            self.do_infer_expectation(typing_env, instance, body)
         })
     }
 }
@@ -651,18 +659,23 @@ memoize!(
     #[instrument(skip(cx), fields(poly_ty = %PolyDisplay(&poly_ty)), ret)]
     pub fn drop_expectation<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_ty: ParamEnvAnd<'tcx, Ty<'tcx>>,
+        poly_ty: PseudoCanonicalInput<'tcx, Ty<'tcx>>,
     ) -> Result<ExpectationRange, Error> {
-        let (param_env, ty) = poly_ty.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: ty,
+        } = poly_ty;
 
         // If the type doesn't need drop, then there is trivially no expectation.
-        if !ty.needs_drop(cx.tcx, param_env) {
+        if !ty.needs_drop(cx.tcx, typing_env) {
             return Ok(ExpectationRange::top());
         }
 
         match ty.kind() {
             ty::Closure(_, args) => {
-                return cx.drop_expectation(param_env.and(args.as_closure().tupled_upvars_ty()));
+                return cx.drop_expectation(
+                    typing_env.as_query_input(args.as_closure().tupled_upvars_ty()),
+                );
             }
 
             // Coroutine drops are non-trivial, use the generated drop shims instead.
@@ -671,21 +684,25 @@ memoize!(
             ty::Tuple(_list) => (),
 
             _ if let Some(boxed_ty) = ty.boxed_ty() => {
-                let exp = cx.drop_expectation(param_env.and(boxed_ty))?;
+                let exp = cx.drop_expectation(typing_env.as_query_input(boxed_ty))?;
                 let drop_trait = cx.require_lang_item(LangItem::Drop, None);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
-                let box_free =
-                    ty::Instance::try_resolve(cx.tcx, param_env, drop_fn, cx.mk_args(&[ty.into()]))
-                        .unwrap()
-                        .unwrap();
-                let box_free_exp = cx.instance_expectation(param_env.and(box_free))?;
+                let box_free = ty::Instance::try_resolve(
+                    cx.tcx,
+                    typing_env,
+                    drop_fn,
+                    cx.mk_args(&[ty.into()]),
+                )
+                .unwrap()
+                .unwrap();
+                let box_free_exp = cx.instance_expectation(typing_env.as_query_input(box_free))?;
 
                 // Usuaully freeing the box shouldn't have any instance expectations, so short circuit here.
                 if box_free_exp == ExpectationRange::top() {
                     return Ok(exp);
                 }
 
-                let adj = cx.drop_adjustment(param_env.and(boxed_ty))?;
+                let adj = cx.drop_adjustment(typing_env.as_query_input(boxed_ty))?;
                 let adj_bound = AdjustmentBounds::single_value(adj);
 
                 let mut expected = box_free_exp - adj_bound;
@@ -709,10 +726,10 @@ memoize!(
             ty::Adt(def, _) => {
                 // For Adts, we first try to not use any of the args and just try the most
                 // polymorphic version of the type.
-                let poly_param_env = cx.param_env_reveal_all_normalized(def.did());
+                let poly_typing_env = TypingEnv::post_analysis(cx.tcx, def.did());
                 let poly_args = cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
-                let poly_poly_ty =
-                    poly_param_env.and(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
+                let poly_poly_ty = poly_typing_env
+                    .as_query_input(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
                 if poly_poly_ty != poly_ty {
                     match cx.drop_expectation(poly_poly_ty) {
                         Err(Error::TooGeneric) => (),
@@ -743,15 +760,19 @@ memoize!(
 
             ty::Array(elem_ty, size) => {
                 let infcx = cx.tcx.infer_ctxt().build(TypingMode::PostAnalysis);
-                let size = rustc_trait_selection::traits::evaluate_const(&infcx, *size, param_env)
-                    .try_to_target_usize(cx.tcx)
-                    .ok_or(Error::TooGeneric);
+                let size = rustc_trait_selection::traits::evaluate_const(
+                    &infcx,
+                    *size,
+                    typing_env.param_env,
+                )
+                .try_to_target_usize(cx.tcx)
+                .ok_or(Error::TooGeneric);
                 if size == Ok(0) {
                     return Ok(ExpectationRange::top());
                 }
 
                 // Special case for no expectation at all. No need to check adjustment here.
-                let param_and_elem_ty = param_env.and(*elem_ty);
+                let param_and_elem_ty = typing_env.as_query_input(*elem_ty);
                 let elem_exp = cx.drop_expectation(param_and_elem_ty)?;
                 if elem_exp == ExpectationRange::top() {
                     return Ok(ExpectationRange::top());
@@ -794,19 +815,19 @@ memoize!(
             ty::Slice(elem_ty) => {
                 // We can assume adjustment here is 0 otherwise the adjustment calculation
                 // logic would have complained.
-                return cx.drop_expectation(param_env.and(*elem_ty));
+                return cx.drop_expectation(typing_env.as_query_input(*elem_ty));
             }
 
             _ => return Err(Error::TooGeneric),
         }
 
-        // Do not call `resolve_drop_in_place` because we need param_env.
+        // Do not call `resolve_drop_in_place` because we need typing_env.
         let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
         let args = cx.mk_args(&[ty.into()]);
-        let instance = ty::Instance::try_resolve(cx.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()
             .unwrap();
-        let poly_instance = param_env.and(instance);
+        let poly_instance = typing_env.as_query_input(instance);
 
         assert!(matches!(
             instance.def,
@@ -821,7 +842,7 @@ memoize!(
             .any(|x| x.instance == poly_instance)
         {
             // Recursion encountered.
-            if param_env.caller_bounds().is_empty() {
+            if typing_env.param_env.caller_bounds().is_empty() {
                 return Ok(ExpectationRange::top());
             } else {
                 // If we are handling generic functions, then defer decision to monomorphization time.
@@ -829,8 +850,8 @@ memoize!(
             }
         }
 
-        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), param_env, ty);
-        let result = cx.infer_expectation(param_env, instance, &mir);
+        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), typing_env, ty);
+        let result = cx.infer_expectation(typing_env, instance, &mir);
 
         // Recursion encountered.
         if let Some(&recur) = cx.query_cache::<drop_expectation>().borrow().get(&poly_ty) {
@@ -856,7 +877,7 @@ memoize!(
             }
         }
 
-        // if instance.def_id().is_local() && param_env.caller_bounds().is_empty() {
+        // if instance.def_id().is_local() && typing_env.param_env.caller_bounds().is_empty() {
         //     cx.sql_store::<drop_adjustment>(poly_instance, result);
         // }
 
@@ -868,13 +889,16 @@ memoize!(
     #[instrument(skip(cx), fields(poly_ty = %PolyDisplay(&poly_ty)), ret)]
     pub fn drop_expectation_check<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_ty: ParamEnvAnd<'tcx, Ty<'tcx>>,
+        poly_ty: PseudoCanonicalInput<'tcx, Ty<'tcx>>,
     ) -> Result<(), Error> {
         let expectation = cx.drop_expectation(poly_ty)?;
-        let (param_env, ty) = poly_ty.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: ty,
+        } = poly_ty;
 
         // If the type doesn't need drop, then there is trivially no expectation.
-        if !ty.needs_drop(cx.tcx, param_env) {
+        if !ty.needs_drop(cx.tcx, typing_env) {
             return Ok(());
         }
 
@@ -894,10 +918,10 @@ memoize!(
             ty::Adt(def, _) => {
                 // For Adts, we first try to not use any of the args and just try the most
                 // polymorphic version of the type.
-                let poly_param_env = cx.param_env_reveal_all_normalized(def.did());
+                let poly_typing_env = TypingEnv::post_analysis(cx.tcx, def.did());
                 let poly_args = cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
-                let poly_poly_ty =
-                    poly_param_env.and(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
+                let poly_poly_ty = poly_typing_env
+                    .as_query_input(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
                 if poly_poly_ty != poly_ty {
                     match cx.drop_expectation_check(poly_poly_ty) {
                         Err(Error::TooGeneric) => (),
@@ -923,10 +947,10 @@ memoize!(
             return Ok(());
         }
 
-        // Do not call `resolve_drop_in_place` because we need param_env.
+        // Do not call `resolve_drop_in_place` because we need typing_env.
         let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
         let args = cx.mk_args(&[ty.into()]);
-        let instance = ty::Instance::try_resolve(cx.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()
             .unwrap();
 
@@ -935,8 +959,8 @@ memoize!(
             ty::InstanceKind::DropGlue(_, Some(_))
         ));
 
-        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), param_env, ty);
-        let expectation_infer = cx.infer_expectation(param_env, instance, &mir)?;
+        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), typing_env, ty);
+        let expectation_infer = cx.infer_expectation(typing_env, instance, &mir)?;
         // Check if the inferred expectation matches the annotation.
         if !expectation_infer.contains_range(expectation) {
             let mut diag = cx.dcx().struct_span_err(
@@ -960,16 +984,19 @@ memoize!(
     #[instrument(skip(cx), fields(poly_instance = %PolyDisplay(&poly_instance)), ret)]
     pub fn instance_expectation<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+        poly_instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     ) -> Result<ExpectationRange, Error> {
-        let (param_env, instance) = poly_instance.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: instance,
+        } = poly_instance;
         match instance.def {
             // No Rust built-in intrinsics will mess with preemption count.
             ty::InstanceKind::Intrinsic(_) => return Ok(ExpectationRange::top()),
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(ExpectationRange::top()),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_expectation(param_env.and(ty))
+                return cx.drop_expectation(typing_env.as_query_input(ty))
             }
             ty::InstanceKind::Virtual(def_id, _) => {
                 if let Some(exp) = cx.preemption_count_annotation(def_id).expectation {
@@ -983,11 +1010,11 @@ memoize!(
 
         let mut generic = false;
         if matches!(instance.def, ty::InstanceKind::Item(_)) {
-            let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
+            let poly_typing_env = TypingEnv::post_analysis(cx.tcx, instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
             let poly_poly_instance =
-                poly_param_env.and(Instance::new(instance.def_id(), poly_args));
+                poly_typing_env.as_query_input(Instance::new(instance.def_id(), poly_args));
             generic = poly_poly_instance == poly_instance;
             if !generic {
                 match cx.instance_expectation(poly_poly_instance) {
@@ -1033,7 +1060,7 @@ memoize!(
             .any(|x| x.instance == poly_instance)
         {
             // Recursion encountered.
-            if param_env.caller_bounds().is_empty() {
+            if typing_env.param_env.caller_bounds().is_empty() {
                 return Ok(ExpectationRange::top());
             } else {
                 // If we are handling generic functions, then defer decision to monomorphization time.
@@ -1042,7 +1069,7 @@ memoize!(
         }
 
         let mir = cx.analysis_instance_mir(instance.def);
-        let result = cx.infer_expectation(param_env, instance, mir);
+        let result = cx.infer_expectation(typing_env, instance, mir);
 
         // Recursion encountered.
         if let Some(recur) = cx
@@ -1078,7 +1105,9 @@ memoize!(
             }
         }
 
-        if instance.def_id().is_local() && (generic || param_env.caller_bounds().is_empty()) {
+        if instance.def_id().is_local()
+            && (generic || typing_env.param_env.caller_bounds().is_empty())
+        {
             cx.sql_store::<instance_expectation>(poly_instance, result);
         }
 
@@ -1113,10 +1142,13 @@ memoize!(
     #[instrument(skip(cx), fields(poly_instance = %PolyDisplay(&poly_instance)), ret)]
     pub fn instance_expectation_check<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+        poly_instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     ) -> Result<(), Error> {
         let expectation = cx.instance_expectation(poly_instance)?;
-        let (param_env, instance) = poly_instance.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: instance,
+        } = poly_instance;
 
         // Only check locally codegenned instances.
         if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
@@ -1129,7 +1161,7 @@ memoize!(
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(()),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_expectation_check(param_env.and(ty))
+                return cx.drop_expectation_check(typing_env.as_query_input(ty))
             }
             // Checked by indirect checks
             ty::InstanceKind::Virtual(_, _) => return Ok(()),
@@ -1138,11 +1170,11 @@ memoize!(
 
         // Prefer to do polymorphic check if possible.
         if matches!(instance.def, ty::InstanceKind::Item(_)) {
-            let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
+            let poly_typing_env = TypingEnv::post_analysis(cx.tcx, instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
             let poly_poly_instance =
-                poly_param_env.and(Instance::new(instance.def_id(), poly_args));
+                poly_typing_env.as_query_input(Instance::new(instance.def_id(), poly_args));
             let generic = poly_poly_instance == poly_instance;
             if !generic {
                 match cx.instance_expectation_check(poly_poly_instance) {
@@ -1172,7 +1204,7 @@ memoize!(
 
         if annotation.expectation.is_some() && !annotation.unchecked {
             let mir = body.unwrap();
-            let expectation_infer = cx.infer_expectation(param_env, instance, mir)?;
+            let expectation_infer = cx.infer_expectation(typing_env, instance, mir)?;
             // Check if the inferred expectation matches the annotation.
             if !expectation_infer.contains_range(expectation) {
                 let mut diag = cx.dcx().struct_span_err(
@@ -1186,7 +1218,7 @@ memoize!(
                     "but the expectation inferred is {expectation_infer}"
                 ));
                 cx.report_body_expectation_error(
-                    param_env,
+                    typing_env,
                     instance,
                     mir,
                     expectation,
@@ -1233,7 +1265,7 @@ memoize!(
                         );
                         if let Some(body) = body {
                             cx.report_body_expectation_error(
-                                param_env,
+                                typing_env,
                                 instance,
                                 body,
                                 ancestor_exp,
@@ -1274,7 +1306,7 @@ memoize!(
                 ));
                 if let Some(body) = body {
                     cx.report_body_expectation_error(
-                        param_env,
+                        typing_env,
                         instance,
                         body,
                         ffi_property.1,

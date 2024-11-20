@@ -6,7 +6,9 @@ use rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed, MultiSpan};
 use rustc_hir::def_id::{CrateNum, DefId};
 use rustc_hir::LangItem;
 use rustc_middle::mir::{Body, TerminatorKind, UnwindAction};
-use rustc_middle::ty::{self, GenericArgs, Instance, ParamEnv, ParamEnvAnd, Ty, TypingMode};
+use rustc_middle::ty::{
+    self, GenericArgs, Instance, PseudoCanonicalInput, Ty, TypingEnv, TypingMode,
+};
 use rustc_mir_dataflow::Analysis;
 use rustc_mir_dataflow::JoinSemiLattice;
 use rustc_trait_selection::infer::TyCtxtInferExt;
@@ -16,7 +18,10 @@ use super::{Error, PolyDisplay, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
 
 impl<'tcx> AnalysisCtxt<'tcx> {
-    fn drop_adjustment_overflow(&self, poly_ty: ParamEnvAnd<'tcx, Ty<'tcx>>) -> Result<!, Error> {
+    fn drop_adjustment_overflow(
+        &self,
+        poly_ty: PseudoCanonicalInput<'tcx, Ty<'tcx>>,
+    ) -> Result<!, Error> {
         let diag = self.dcx().struct_err(format!(
             "preemption count overflow when trying to compute adjustment of type `{}",
             PolyDisplay(&poly_ty)
@@ -24,10 +29,10 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         Err(Error::Error(self.emit_with_use_site_info(diag)))
     }
 
-    fn poly_instance_of_def_id(&self, def_id: DefId) -> ParamEnvAnd<'tcx, Instance<'tcx>> {
-        let poly_param_env = self.param_env_reveal_all_normalized(def_id);
+    fn poly_instance_of_def_id(&self, def_id: DefId) -> PseudoCanonicalInput<'tcx, Instance<'tcx>> {
+        let poly_typing_env = TypingEnv::post_analysis(self.tcx, def_id);
         let poly_args = self.erase_regions(GenericArgs::identity_for_item(self.tcx, def_id));
-        poly_param_env.and(Instance::new(def_id, poly_args))
+        poly_typing_env.as_query_input(Instance::new(def_id, poly_args))
     }
 
     pub fn emit_with_use_site_info<G: EmissionGuarantee>(
@@ -266,7 +271,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub fn do_infer_adjustment(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
     ) -> Result<i32, Error> {
@@ -285,7 +290,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         let mut analysis_result = AdjustmentComputation {
             checker: self,
             body,
-            param_env,
+            typing_env,
             instance,
         }
         .iterate_to_fixpoint(self.tcx, body, None)
@@ -320,7 +325,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub fn infer_adjustment(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
     ) -> Result<i32, Error> {
@@ -330,12 +335,12 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         {
             self.emit_with_use_site_info(self.dcx().struct_fatal(format!(
                 "reached the recursion limit while checking adjustment for `{}`",
-                PolyDisplay(&param_env.and(instance))
+                PolyDisplay(&typing_env.as_query_input(instance))
             )));
         }
 
         rustc_data_structures::stack::ensure_sufficient_stack(|| {
-            self.do_infer_adjustment(param_env, instance, body)
+            self.do_infer_adjustment(typing_env, instance, body)
         })
     }
 }
@@ -344,18 +349,23 @@ memoize!(
     #[instrument(skip(cx), fields(poly_ty = %PolyDisplay(&poly_ty)), ret)]
     pub fn drop_adjustment<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_ty: ParamEnvAnd<'tcx, Ty<'tcx>>,
+        poly_ty: PseudoCanonicalInput<'tcx, Ty<'tcx>>,
     ) -> Result<i32, Error> {
-        let (param_env, ty) = poly_ty.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: ty,
+        } = poly_ty;
 
         // If the type doesn't need drop, then there is trivially no adjustment.
-        if !ty.needs_drop(cx.tcx, param_env) {
+        if !ty.needs_drop(cx.tcx, typing_env) {
             return Ok(0);
         }
 
         match ty.kind() {
             ty::Closure(_, args) => {
-                return cx.drop_adjustment(param_env.and(args.as_closure().tupled_upvars_ty()));
+                return cx.drop_adjustment(
+                    typing_env.as_query_input(args.as_closure().tupled_upvars_ty()),
+                );
             }
 
             // Coroutine drops are non-trivial, use the generated drop shims instead.
@@ -364,7 +374,7 @@ memoize!(
             ty::Tuple(list) => {
                 let mut adj = 0i32;
                 for elem_ty in list.iter() {
-                    let elem_adj = cx.drop_adjustment(param_env.and(elem_ty))?;
+                    let elem_adj = cx.drop_adjustment(typing_env.as_query_input(elem_ty))?;
                     let Some(new_adj) = adj.checked_add(elem_adj) else {
                         cx.drop_adjustment_overflow(poly_ty)?
                     };
@@ -374,14 +384,18 @@ memoize!(
             }
 
             _ if let Some(boxed_ty) = ty.boxed_ty() => {
-                let adj = cx.drop_adjustment(param_env.and(boxed_ty))?;
+                let adj = cx.drop_adjustment(typing_env.as_query_input(boxed_ty))?;
                 let drop_trait = cx.require_lang_item(LangItem::Drop, None);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
-                let box_free =
-                    ty::Instance::try_resolve(cx.tcx, param_env, drop_fn, cx.mk_args(&[ty.into()]))
-                        .unwrap()
-                        .unwrap();
-                let box_free_adj = cx.instance_adjustment(param_env.and(box_free))?;
+                let box_free = ty::Instance::try_resolve(
+                    cx.tcx,
+                    typing_env,
+                    drop_fn,
+                    cx.mk_args(&[ty.into()]),
+                )
+                .unwrap()
+                .unwrap();
+                let box_free_adj = cx.instance_adjustment(typing_env.as_query_input(box_free))?;
                 let Some(adj) = adj.checked_add(box_free_adj) else {
                     cx.drop_adjustment_overflow(poly_ty)?
                 };
@@ -391,10 +405,10 @@ memoize!(
             ty::Adt(def, _) => {
                 // For Adts, we first try to not use any of the args and just try the most
                 // polymorphic version of the type.
-                let poly_param_env = cx.param_env_reveal_all_normalized(def.did());
+                let poly_typing_env = TypingEnv::post_analysis(cx.tcx, def.did());
                 let poly_args = cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
-                let poly_poly_ty =
-                    poly_param_env.and(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
+                let poly_poly_ty = poly_typing_env
+                    .as_query_input(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
                 if poly_poly_ty != poly_ty {
                     match cx.drop_adjustment(poly_poly_ty) {
                         Err(Error::TooGeneric) => (),
@@ -425,13 +439,17 @@ memoize!(
 
             ty::Array(elem_ty, size) => {
                 let infcx = cx.tcx.infer_ctxt().build(TypingMode::PostAnalysis);
-                let size = rustc_trait_selection::traits::evaluate_const(&infcx, *size, param_env)
-                    .try_to_target_usize(cx.tcx)
-                    .ok_or(Error::TooGeneric);
+                let size = rustc_trait_selection::traits::evaluate_const(
+                    &infcx,
+                    *size,
+                    typing_env.param_env,
+                )
+                .try_to_target_usize(cx.tcx)
+                .ok_or(Error::TooGeneric);
                 if size == Ok(0) {
                     return Ok(0);
                 }
-                let elem_adj = cx.drop_adjustment(param_env.and(*elem_ty))?;
+                let elem_adj = cx.drop_adjustment(typing_env.as_query_input(*elem_ty))?;
                 if elem_adj == 0 {
                     return Ok(0);
                 }
@@ -445,7 +463,7 @@ memoize!(
             }
 
             ty::Slice(elem_ty) => {
-                let elem_adj = cx.drop_adjustment(param_env.and(*elem_ty))?;
+                let elem_adj = cx.drop_adjustment(typing_env.as_query_input(*elem_ty))?;
                 if elem_adj != 0 {
                     let mut diag = cx.dcx().struct_err(
                         "dropping element of slice causes non-zero preemption count adjustment",
@@ -466,13 +484,13 @@ memoize!(
             _ => return Err(Error::TooGeneric),
         }
 
-        // Do not call `resolve_drop_in_place` because we need param_env.
+        // Do not call `resolve_drop_in_place` because we need typing_env.
         let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
         let args = cx.mk_args(&[ty.into()]);
-        let instance = ty::Instance::try_resolve(cx.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()
             .unwrap();
-        let poly_instance = param_env.and(instance);
+        let poly_instance = typing_env.as_query_input(instance);
 
         assert!(matches!(
             instance.def,
@@ -487,7 +505,7 @@ memoize!(
             .any(|x| x.instance == poly_instance)
         {
             // Recursion encountered.
-            if param_env.caller_bounds().is_empty() {
+            if typing_env.param_env.caller_bounds().is_empty() {
                 return Ok(0);
             } else {
                 // If we are handling generic functions, then defer decision to monomorphization time.
@@ -495,8 +513,8 @@ memoize!(
             }
         }
 
-        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), param_env, ty);
-        let result = cx.infer_adjustment(param_env, instance, &mir);
+        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), typing_env, ty);
+        let result = cx.infer_adjustment(typing_env, instance, &mir);
 
         // Recursion encountered.
         if let Some(&recur) = cx.query_cache::<drop_adjustment>().borrow().get(&poly_ty) {
@@ -530,13 +548,16 @@ memoize!(
     #[instrument(skip(cx), fields(poly_ty = %PolyDisplay(&poly_ty)), ret)]
     pub fn drop_adjustment_check<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_ty: ParamEnvAnd<'tcx, Ty<'tcx>>,
+        poly_ty: PseudoCanonicalInput<'tcx, Ty<'tcx>>,
     ) -> Result<(), Error> {
         let adjustment = cx.drop_adjustment(poly_ty)?;
-        let (param_env, ty) = poly_ty.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: ty,
+        } = poly_ty;
 
         // If the type doesn't need drop, then there is trivially no adjustment.
-        if !ty.needs_drop(cx.tcx, param_env) {
+        if !ty.needs_drop(cx.tcx, typing_env) {
             return Ok(());
         }
 
@@ -555,10 +576,10 @@ memoize!(
             ty::Adt(def, _) => {
                 // For Adts, we first try to not use any of the args and just try the most
                 // polymorphic version of the type.
-                let poly_param_env = cx.param_env_reveal_all_normalized(def.did());
+                let poly_typing_env = TypingEnv::post_analysis(cx.tcx, def.did());
                 let poly_args = cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
-                let poly_poly_ty =
-                    poly_param_env.and(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
+                let poly_poly_ty = poly_typing_env
+                    .as_query_input(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
                 if poly_poly_ty != poly_ty {
                     match cx.drop_adjustment_check(poly_poly_ty) {
                         Err(Error::TooGeneric) => (),
@@ -584,10 +605,10 @@ memoize!(
             return Ok(());
         }
 
-        // Do not call `resolve_drop_in_place` because we need param_env.
+        // Do not call `resolve_drop_in_place` because we need typing_env.
         let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
         let args = cx.mk_args(&[ty.into()]);
-        let instance = ty::Instance::try_resolve(cx.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()
             .unwrap();
 
@@ -596,8 +617,8 @@ memoize!(
             ty::InstanceKind::DropGlue(_, Some(_))
         ));
 
-        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), param_env, ty);
-        let adjustment_infer = cx.infer_adjustment(param_env, instance, &mir)?;
+        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), typing_env, ty);
+        let adjustment_infer = cx.infer_adjustment(typing_env, instance, &mir)?;
         // Check if the inferred adjustment matches the annotation.
         if let Some(adjustment) = annotation.adjustment {
             if adjustment != adjustment_infer {
@@ -620,16 +641,19 @@ memoize!(
     #[instrument(skip(cx), fields(poly_instance = %PolyDisplay(&poly_instance)), ret)]
     pub fn instance_adjustment<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+        poly_instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     ) -> Result<i32, Error> {
-        let (param_env, instance) = poly_instance.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: instance,
+        } = poly_instance;
         match instance.def {
             // No Rust built-in intrinsics will mess with preemption count.
             ty::InstanceKind::Intrinsic(_) => return Ok(0),
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(0),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_adjustment(param_env.and(ty))
+                return cx.drop_adjustment(typing_env.as_query_input(ty))
             }
             ty::InstanceKind::Virtual(def_id, _) => {
                 if let Some(adj) = cx.preemption_count_annotation(def_id).adjustment {
@@ -643,11 +667,11 @@ memoize!(
 
         let mut generic = false;
         if matches!(instance.def, ty::InstanceKind::Item(_)) {
-            let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
+            let poly_typing_env = TypingEnv::post_analysis(cx.tcx, instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
             let poly_poly_instance =
-                poly_param_env.and(Instance::new(instance.def_id(), poly_args));
+                poly_typing_env.as_query_input(Instance::new(instance.def_id(), poly_args));
             generic = poly_poly_instance == poly_instance;
             if !generic {
                 match cx.instance_adjustment(poly_poly_instance) {
@@ -690,7 +714,7 @@ memoize!(
             .any(|x| x.instance == poly_instance)
         {
             // Recursion encountered.
-            if param_env.caller_bounds().is_empty() {
+            if typing_env.param_env.caller_bounds().is_empty() {
                 return Ok(0);
             } else {
                 // If we are handling generic functions, then defer decision to monomorphization time.
@@ -699,7 +723,7 @@ memoize!(
         }
 
         let mir = cx.analysis_instance_mir(instance.def);
-        let mut result = cx.infer_adjustment(param_env, instance, mir);
+        let mut result = cx.infer_adjustment(typing_env, instance, mir);
 
         // Recursion encountered.
         if let Some(&recur) = cx
@@ -746,7 +770,9 @@ memoize!(
             }
         }
 
-        if instance.def_id().is_local() && (generic || param_env.caller_bounds().is_empty()) {
+        if instance.def_id().is_local()
+            && (generic || typing_env.param_env.caller_bounds().is_empty())
+        {
             cx.sql_store::<instance_adjustment>(poly_instance, result);
         }
 
@@ -772,10 +798,13 @@ memoize!(
     #[instrument(skip(cx), fields(poly_instance = %PolyDisplay(&poly_instance)), ret)]
     pub fn instance_adjustment_check<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+        poly_instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     ) -> Result<(), Error> {
         let adjustment = cx.instance_adjustment(poly_instance)?;
-        let (param_env, instance) = poly_instance.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: instance,
+        } = poly_instance;
 
         // Only check locally codegenned instances.
         if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
@@ -788,7 +817,7 @@ memoize!(
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(()),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_adjustment_check(param_env.and(ty));
+                return cx.drop_adjustment_check(typing_env.as_query_input(ty));
             }
             // Checked by indirect checks
             ty::InstanceKind::Virtual(_, _) => return Ok(()),
@@ -797,11 +826,11 @@ memoize!(
 
         // Prefer to do polymorphic check if possible.
         if matches!(instance.def, ty::InstanceKind::Item(_)) {
-            let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
+            let poly_typing_env = TypingEnv::post_analysis(cx.tcx, instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
             let poly_poly_instance =
-                poly_param_env.and(Instance::new(instance.def_id(), poly_args));
+                poly_typing_env.as_query_input(Instance::new(instance.def_id(), poly_args));
             let generic = poly_poly_instance == poly_instance;
             if !generic {
                 match cx.instance_adjustment_check(poly_poly_instance) {
@@ -825,7 +854,7 @@ memoize!(
 
         if annotation.adjustment.is_some() && !annotation.unchecked {
             let mir = cx.analysis_instance_mir(instance.def);
-            let adjustment_infer = cx.infer_adjustment(param_env, instance, mir)?;
+            let adjustment_infer = cx.infer_adjustment(typing_env, instance, mir)?;
             // Check if the inferred adjustment matches the annotation.
             if adjustment != adjustment_infer {
                 let mut diag = cx.dcx().struct_span_err(

@@ -9,7 +9,7 @@ pub mod dataflow;
 pub mod expectation;
 
 use rustc_errors::ErrorGuaranteed;
-use rustc_middle::ty::{Instance, ParamEnvAnd};
+use rustc_middle::ty::{Instance, PseudoCanonicalInput};
 use rustc_mir_dataflow::lattice::MeetSemiLattice;
 use rustc_span::Span;
 
@@ -21,18 +21,18 @@ pub enum Error {
     Error(ErrorGuaranteed),
 }
 
-pub struct PolyDisplay<'a, 'tcx, T>(pub &'a ParamEnvAnd<'tcx, T>);
+pub struct PolyDisplay<'a, 'tcx, T>(pub &'a PseudoCanonicalInput<'tcx, T>);
 
 impl<T> std::fmt::Display for PolyDisplay<'_, '_, T>
 where
     T: std::fmt::Display + Copy,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (param_env, instance) = self.0.into_parts();
-        write!(f, "{}", instance)?;
-        if !param_env.caller_bounds().is_empty() {
+        let PseudoCanonicalInput { typing_env, value } = self.0;
+        write!(f, "{}", value)?;
+        if !typing_env.param_env.caller_bounds().is_empty() {
             write!(f, " where ")?;
-            for (i, predicate) in param_env.caller_bounds().iter().enumerate() {
+            for (i, predicate) in typing_env.param_env.caller_bounds().iter().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
@@ -178,6 +178,6 @@ pub enum UseSiteKind {
 
 #[derive(Debug)]
 pub struct UseSite<'tcx> {
-    pub instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+    pub instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     pub kind: UseSiteKind,
 }

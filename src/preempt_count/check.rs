@@ -9,8 +9,8 @@ use rustc_middle::mir::interpret::{AllocId, ErrorHandled, GlobalAlloc, Scalar};
 use rustc_middle::mir::{self, visit::Visitor as MirVisitor, Body, Location};
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::{
-    self, GenericArgs, GenericParamDefKind, Instance, ParamEnv, ParamEnvAnd, Ty, TyCtxt,
-    TypeFoldable, TypeVisitableExt, Upcast,
+    self, GenericArgs, GenericParamDefKind, Instance, PseudoCanonicalInput, Ty, TyCtxt,
+    TypeFoldable, TypeVisitableExt, TypingEnv, Upcast,
 };
 use rustc_span::Span;
 
@@ -20,7 +20,7 @@ use crate::ctxt::AnalysisCtxt;
 struct MirNeighborVisitor<'mir, 'tcx, 'cx> {
     cx: &'cx AnalysisCtxt<'tcx>,
     body: &'mir Body<'tcx>,
-    param_env: ParamEnv<'tcx>,
+    typing_env: TypingEnv<'tcx>,
     instance: Instance<'tcx>,
     result: Result<(), Error>,
 }
@@ -29,7 +29,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
     fn monomorphize<T: TypeFoldable<TyCtxt<'tcx>> + Clone>(&self, v: T) -> T {
         self.instance.instantiate_mir_and_normalize_erasing_regions(
             self.cx.tcx,
-            self.param_env,
+            self.typing_env,
             ty::EarlyBinder::bind(v),
         )
     }
@@ -98,24 +98,24 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
         span: Span,
     ) -> Result<(), Error> {
         self.cx.call_stack.borrow_mut().push(UseSite {
-            instance: self.param_env.and(self.instance),
+            instance: self.typing_env.as_query_input(self.instance),
             kind: UseSiteKind::Vtable(span),
         });
         let result = self
             .cx
-            .vtable_construction_check_indirect(self.param_env.and((ty, trait_ref)));
+            .vtable_construction_check_indirect(self.typing_env.as_query_input((ty, trait_ref)));
         self.cx.call_stack.borrow_mut().pop();
         result
     }
 
     fn check_fn_pointer_cast(&mut self, instance: Instance<'tcx>, span: Span) -> Result<(), Error> {
         self.cx.call_stack.borrow_mut().push(UseSite {
-            instance: self.param_env.and(self.instance),
+            instance: self.typing_env.as_query_input(self.instance),
             kind: UseSiteKind::PointerCoercion(span),
         });
         let result = self
             .cx
-            .function_pointer_cast_check_indirect(self.param_env.and(instance));
+            .function_pointer_cast_check_indirect(self.typing_env.as_query_input(instance));
         self.cx.call_stack.borrow_mut().pop();
         result
     }
@@ -140,7 +140,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 let (source_ty, target_ty) =
                     crate::monomorphize_collector::find_vtable_types_for_unsizing(
                         self.cx.tcx.at(span),
-                        self.param_env,
+                        self.typing_env,
                         source_ty,
                         target_ty,
                     );
@@ -163,7 +163,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 let fn_ty = self.monomorphize(fn_ty);
                 if let ty::FnDef(def_id, args) = *fn_ty.kind() {
                     let instance =
-                        ty::Instance::try_resolve(self.cx.tcx, self.param_env, def_id, args)
+                        ty::Instance::try_resolve(self.cx.tcx, self.typing_env, def_id, args)
                             .unwrap()
                             .ok_or(Error::TooGeneric)?;
                     self.check_fn_pointer_cast(instance, span)?;
@@ -258,14 +258,16 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
 
                 if let ty::FnDef(def_id, args) = *callee_ty.kind() {
                     let instance =
-                        ty::Instance::try_resolve(self.cx.tcx, self.param_env, def_id, args)
+                        ty::Instance::try_resolve(self.cx.tcx, self.typing_env, def_id, args)
                             .unwrap()
                             .ok_or(Error::TooGeneric)?;
                     self.cx.call_stack.borrow_mut().push(UseSite {
-                        instance: self.param_env.and(self.instance),
+                        instance: self.typing_env.as_query_input(self.instance),
                         kind: UseSiteKind::Call(span),
                     });
-                    let result = self.cx.instance_check(self.param_env.and(instance));
+                    let result = self
+                        .cx
+                        .instance_check(self.typing_env.as_query_input(instance));
                     self.cx.call_stack.borrow_mut().pop();
                     result?
                 }
@@ -274,13 +276,13 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 let ty = place.ty(self.body, self.cx.tcx).ty;
                 let ty = self.monomorphize(ty);
                 self.cx.call_stack.borrow_mut().push(UseSite {
-                    instance: self.param_env.and(self.instance),
+                    instance: self.typing_env.as_query_input(self.instance),
                     kind: UseSiteKind::Drop {
                         drop_span: span,
                         place_span: self.body.local_decls[place.local].source_info.span,
                     },
                 });
-                let result = self.cx.drop_check(self.param_env.and(ty));
+                let result = self.cx.drop_check(self.typing_env.as_query_input(ty));
                 self.cx.call_stack.borrow_mut().pop();
                 result?
             }
@@ -292,7 +294,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                             if let ty::FnDef(def_id, args) = *fn_ty.kind() {
                                 let instance = ty::Instance::try_resolve(
                                     self.cx.tcx,
-                                    self.param_env,
+                                    self.typing_env,
                                     def_id,
                                     args,
                                 )
@@ -363,8 +365,8 @@ impl<'mir, 'tcx, 'cx> MirVisitor<'tcx> for MirNeighborVisitor<'mir, 'tcx, 'cx> {
         }
 
         let const_ = self.monomorphize(constant.const_);
-        let param_env = ty::ParamEnv::reveal_all();
-        let val = match const_.eval(self.cx.tcx, param_env, constant.span) {
+        let typing_env = ty::TypingEnv::fully_monomorphized();
+        let val = match const_.eval(self.cx.tcx, typing_env, constant.span) {
             Ok(v) => v,
             Err(ErrorHandled::Reported(..)) => return,
             Err(ErrorHandled::TooGeneric(..)) => {
@@ -402,13 +404,13 @@ impl<'mir, 'tcx, 'cx> MirVisitor<'tcx> for MirNeighborVisitor<'mir, 'tcx, 'cx> {
 impl<'tcx> AnalysisCtxt<'tcx> {
     pub fn do_indirect_check(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
     ) -> Result<(), Error> {
         let mut visitor = MirNeighborVisitor {
             cx: self,
-            param_env,
+            typing_env,
             instance,
             body,
             result: Ok(()),
@@ -419,7 +421,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub fn indirect_check(
         &self,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
         instance: Instance<'tcx>,
         body: &Body<'tcx>,
     ) -> Result<(), Error> {
@@ -429,12 +431,12 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         {
             self.emit_with_use_site_info(self.dcx().struct_fatal(format!(
                 "reached the recursion limit while checking indirect calls for `{}`",
-                PolyDisplay(&param_env.and(instance))
+                PolyDisplay(&typing_env.as_query_input(instance))
             )));
         }
 
         rustc_data_structures::stack::ensure_sufficient_stack(|| {
-            self.do_indirect_check(param_env, instance, body)
+            self.do_indirect_check(typing_env, instance, body)
         })
     }
 }
@@ -445,7 +447,7 @@ memoize!(
     #[instrument(skip(cx), fields(poly_instance = %PolyDisplay(&poly_instance)), ret)]
     fn function_pointer_cast_check_indirect<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+        poly_instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     ) -> Result<(), Error> {
         cx.instance_check(poly_instance)?;
 
@@ -484,16 +486,22 @@ memoize!(
     #[instrument(
         skip(cx, poly_ty_trait_ref),
         fields(
-            poly_ty = %PolyDisplay(&poly_ty_trait_ref.param_env.and(poly_ty_trait_ref.value.0)),
+            poly_ty = %PolyDisplay(&poly_ty_trait_ref.typing_env.as_query_input(poly_ty_trait_ref.value.0)),
             trait_ref = ?poly_ty_trait_ref.value.1
         ),
         ret
     )]
     fn vtable_construction_check_indirect<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_ty_trait_ref: ParamEnvAnd<'tcx, (Ty<'tcx>, Option<ty::PolyExistentialTraitRef<'tcx>>)>,
+        poly_ty_trait_ref: PseudoCanonicalInput<
+            'tcx,
+            (Ty<'tcx>, Option<ty::PolyExistentialTraitRef<'tcx>>),
+        >,
     ) -> Result<(), Error> {
-        let (param_env, (ty, trait_ref)) = poly_ty_trait_ref.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: (ty, trait_ref),
+        } = poly_ty_trait_ref;
 
         let mut diag = None;
         if let Some(principal) = trait_ref {
@@ -530,7 +538,7 @@ memoize!(
                             }
                         })
                     });
-                    let args = cx.normalize_erasing_late_bound_regions(param_env, args);
+                    let args = cx.normalize_erasing_late_bound_regions(typing_env, args);
 
                     let predicates = cx.predicates_of(entry).instantiate_own(cx.tcx, args);
                     if rustc_trait_selection::traits::impossible_predicates(
@@ -540,10 +548,10 @@ memoize!(
                         continue;
                     }
 
-                    let instance = ty::Instance::try_resolve(cx.tcx, param_env, entry, args)
+                    let instance = ty::Instance::try_resolve(cx.tcx, typing_env, entry, args)
                         .unwrap()
                         .ok_or(Error::TooGeneric)?;
-                    let poly_instance = param_env.and(instance);
+                    let poly_instance = typing_env.as_query_input(instance);
                     cx.instance_check(poly_instance)?;
 
                     // Find the `DefId` of the trait method.
@@ -596,7 +604,7 @@ memoize!(
         }
 
         // Check destructor
-        let poly_ty = param_env.and(ty);
+        let poly_ty = typing_env.as_query_input(ty);
 
         let drop_annotation = trait_ref
             .map(|x| cx.drop_preemption_count_annotation(x.def_id()))
@@ -645,21 +653,25 @@ memoize!(
     #[instrument(skip(cx), fields(poly_ty = %PolyDisplay(&poly_ty)), ret)]
     fn drop_check<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_ty: ParamEnvAnd<'tcx, Ty<'tcx>>,
+        poly_ty: PseudoCanonicalInput<'tcx, Ty<'tcx>>,
     ) -> Result<(), Error> {
         cx.drop_adjustment_check(poly_ty)?;
         cx.drop_expectation_check(poly_ty)?;
 
-        let (param_env, ty) = poly_ty.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: ty,
+        } = poly_ty;
 
         // If the type doesn't need drop, then it trivially refers to nothing.
-        if !ty.needs_drop(cx.tcx, param_env) {
+        if !ty.needs_drop(cx.tcx, typing_env) {
             return Ok(());
         }
 
         match ty.kind() {
             ty::Closure(_, args) => {
-                return cx.drop_check(param_env.and(args.as_closure().tupled_upvars_ty()));
+                return cx
+                    .drop_check(typing_env.as_query_input(args.as_closure().tupled_upvars_ty()));
             }
 
             // Coroutine drops are non-trivial, use the generated drop shims instead.
@@ -667,30 +679,34 @@ memoize!(
 
             ty::Tuple(list) => {
                 for ty in list.iter() {
-                    cx.drop_check(param_env.and(ty))?;
+                    cx.drop_check(typing_env.as_query_input(ty))?;
                 }
                 return Ok(());
             }
 
             _ if let Some(boxed_ty) = ty.boxed_ty() => {
-                cx.drop_check(param_env.and(boxed_ty))?;
+                cx.drop_check(typing_env.as_query_input(boxed_ty))?;
                 let drop_trait = cx.require_lang_item(LangItem::Drop, None);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
-                let box_free =
-                    ty::Instance::try_resolve(cx.tcx, param_env, drop_fn, cx.mk_args(&[ty.into()]))
-                        .unwrap()
-                        .unwrap();
-                cx.instance_check(param_env.and(box_free))?;
+                let box_free = ty::Instance::try_resolve(
+                    cx.tcx,
+                    typing_env,
+                    drop_fn,
+                    cx.mk_args(&[ty.into()]),
+                )
+                .unwrap()
+                .unwrap();
+                cx.instance_check(typing_env.as_query_input(box_free))?;
                 return Ok(());
             }
 
             ty::Adt(def, _) => {
                 // For Adts, we first try to not use any of the args and just try the most
                 // polymorphic version of the type.
-                let poly_param_env = cx.param_env_reveal_all_normalized(def.did());
+                let poly_typing_env = TypingEnv::post_analysis(cx.tcx, def.did());
                 let poly_args = cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
-                let poly_poly_ty =
-                    poly_param_env.and(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
+                let poly_poly_ty = poly_typing_env
+                    .as_query_input(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
                 if poly_poly_ty != poly_ty {
                     match cx.drop_check(poly_poly_ty) {
                         Err(Error::TooGeneric) => (),
@@ -706,19 +722,19 @@ memoize!(
 
             // Array and slice drops only refer to respective element destructor.
             ty::Array(elem_ty, _) | ty::Slice(elem_ty) => {
-                return cx.drop_check(param_env.and(*elem_ty));
+                return cx.drop_check(typing_env.as_query_input(*elem_ty));
             }
 
             _ => return Err(Error::TooGeneric),
         }
 
-        // Do not call `resolve_drop_in_place` because we need param_env.
+        // Do not call `resolve_drop_in_place` because we need typing_env.
         let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
         let args = cx.mk_args(&[ty.into()]);
-        let instance = ty::Instance::try_resolve(cx.tcx, param_env, drop_in_place, args)
+        let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()
             .unwrap();
-        let poly_instance = param_env.and(instance);
+        let poly_instance = typing_env.as_query_input(instance);
 
         assert!(matches!(
             instance.def,
@@ -736,8 +752,8 @@ memoize!(
             return Ok(());
         }
 
-        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), param_env, ty);
-        let result = cx.indirect_check(param_env, instance, &mir);
+        let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), typing_env, ty);
+        let result = cx.indirect_check(typing_env, instance, &mir);
 
         result
     }
@@ -747,9 +763,12 @@ memoize!(
     #[instrument(skip(cx), fields(poly_instance = %PolyDisplay(&poly_instance)), ret)]
     pub fn instance_check<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
-        poly_instance: ParamEnvAnd<'tcx, Instance<'tcx>>,
+        poly_instance: PseudoCanonicalInput<'tcx, Instance<'tcx>>,
     ) -> Result<(), Error> {
-        let (param_env, instance) = poly_instance.into_parts();
+        let PseudoCanonicalInput {
+            typing_env,
+            value: instance,
+        } = poly_instance;
         if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
             return Ok(());
         }
@@ -762,18 +781,20 @@ memoize!(
             ty::InstanceKind::Intrinsic(_) => return Ok(()),
             // Empty drop glue, then it is a no-op.
             ty::InstanceKind::DropGlue(_, None) => return Ok(()),
-            ty::InstanceKind::DropGlue(_, Some(ty)) => return cx.drop_check(param_env.and(ty)),
+            ty::InstanceKind::DropGlue(_, Some(ty)) => {
+                return cx.drop_check(typing_env.as_query_input(ty))
+            }
             // Can't check further here. Will be checked at vtable generation site.
             ty::InstanceKind::Virtual(_, _) => return Ok(()),
             _ => (),
         }
 
         if matches!(instance.def, ty::InstanceKind::Item(_)) {
-            let poly_param_env = cx.param_env_reveal_all_normalized(instance.def_id());
+            let poly_typing_env = TypingEnv::post_analysis(cx.tcx, instance.def_id());
             let poly_args =
                 cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
             let poly_poly_instance =
-                poly_param_env.and(Instance::new(instance.def_id(), poly_args));
+                poly_typing_env.as_query_input(Instance::new(instance.def_id(), poly_args));
             let generic = poly_poly_instance == poly_instance;
             if !generic {
                 match cx.instance_check(poly_poly_instance) {
@@ -800,7 +821,7 @@ memoize!(
         }
 
         let mir = cx.analysis_instance_mir(instance.def);
-        let result = cx.indirect_check(param_env, instance, mir);
+        let result = cx.indirect_check(typing_env, instance, mir);
 
         result
     }
