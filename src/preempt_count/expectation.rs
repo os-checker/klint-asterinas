@@ -9,7 +9,6 @@ use rustc_middle::mir::{self, Body, TerminatorKind};
 use rustc_middle::ty::{
     self, GenericArgs, Instance, PseudoCanonicalInput, Ty, TypingEnv, TypingMode,
 };
-use rustc_mir_dataflow::lattice::MeetSemiLattice;
 use rustc_mir_dataflow::Analysis;
 use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::TyCtxtInferExt;
@@ -17,6 +16,7 @@ use rustc_trait_selection::infer::TyCtxtInferExt;
 use super::dataflow::AdjustmentComputation;
 use super::{AdjustmentBounds, Error, ExpectationRange, PolyDisplay, UseSite, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
+use crate::lattice::MeetSemiLattice;
 
 impl<'tcx> AnalysisCtxt<'tcx> {
     pub fn terminator_expectation(

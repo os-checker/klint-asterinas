@@ -49,6 +49,7 @@ mod ctxt;
 mod atomic_context;
 mod attribute;
 mod infallible_allocation;
+mod lattice;
 mod mir;
 mod monomorphize_collector;
 mod preempt_count;
