@@ -917,7 +917,7 @@ pub fn find_vtable_types_for_unsizing<'tcx>(
 }
 
 fn create_fn_mono_item<'tcx>(
-    tcx: TyCtxt<'tcx>,
+    _tcx: TyCtxt<'tcx>,
     instance: Instance<'tcx>,
     source: Span,
 ) -> Spanned<MonoItem<'tcx>> {

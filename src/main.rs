@@ -34,7 +34,6 @@ extern crate rustc_trait_selection;
 #[macro_use]
 extern crate tracing;
 
-use std::process::ExitCode;
 use std::sync::atomic::AtomicPtr;
 
 use rustc_driver::Callbacks;
@@ -99,13 +98,10 @@ impl Callbacks for MyCallbacks {
     }
 }
 
-fn main() -> ExitCode {
+fn main() {
     let handler = EarlyDiagCtxt::new(ErrorOutputType::default());
     rustc_driver::init_logger(&handler, rustc_log::LoggerConfig::from_env("KLINT_LOG"));
     let args: Vec<_> = std::env::args().collect();
 
-    match rustc_driver::RunCompiler::new(&args, &mut MyCallbacks).run() {
-        Ok(_) => ExitCode::SUCCESS,
-        Err(_) => ExitCode::FAILURE,
-    }
+    rustc_driver::RunCompiler::new(&args, &mut MyCallbacks).run();
 }
