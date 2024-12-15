@@ -216,7 +216,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
         });
     }
 
-    fn apply_statement_effect(
+    fn apply_primary_statement_effect(
         &mut self,
         _state: &mut Self::Domain,
         _statement: &rustc_middle::mir::Statement<'tcx>,
@@ -224,7 +224,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     ) {
     }
 
-    fn apply_terminator_effect<'mir>(
+    fn apply_primary_terminator_effect<'mir>(
         &mut self,
         state: &mut Self::Domain,
         terminator: &'mir rustc_middle::mir::Terminator<'tcx>,
