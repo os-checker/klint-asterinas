@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use rustc_ast::tokenstream::{self, TokenTree};
-use rustc_ast::{ast, token};
+use rustc_ast::{token, DelimArgs};
 use rustc_data_structures::sync::Lrc;
 use rustc_errors::{Diag, ErrorGuaranteed};
-use rustc_hir::HirId;
+use rustc_hir::{AttrArgs, AttrItem, AttrKind, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::symbol::Ident;
 use rustc_span::Span;
@@ -337,14 +337,14 @@ impl<'tcx> AttrParser<'tcx> {
 
     fn parse_preempt_count(
         &self,
-        attr: &ast::Attribute,
-        item: &ast::AttrItem,
+        attr: &Attribute,
+        item: &AttrItem,
     ) -> Result<PreemptionCount, ErrorGuaranteed> {
         let mut adjustment = None;
         let mut expectation = None;
         let mut unchecked = false;
 
-        let ast::AttrArgs::Delimited(ast::DelimArgs {
+        let AttrArgs::Delimited(DelimArgs {
             dspan: delim_span,
             tokens: tts,
             ..
@@ -396,7 +396,7 @@ impl<'tcx> AttrParser<'tcx> {
         })?;
 
         if adjustment.is_none() && expectation.is_none() {
-            self.error(item.args.span().unwrap(), |diag| {
+            self.error(delim_span.entire(), |diag| {
                 diag.help("at least one of `adjust` or `expect` property must be specified");
             })?;
         }
@@ -408,12 +408,11 @@ impl<'tcx> AttrParser<'tcx> {
         })
     }
 
-    fn parse(&self, attr: &ast::Attribute) -> Option<KlintAttribute> {
-        let ast::AttrKind::Normal(normal_attr) = &attr.kind else {
+    fn parse(&self, attr: &Attribute) -> Option<KlintAttribute> {
+        let AttrKind::Normal(item) = &attr.kind else {
             return None;
         };
-        let item = &normal_attr.item;
-        if item.path.segments[0].ident.name != *crate::symbol::klint {
+        if item.path.segments[0].name != *crate::symbol::klint {
             return None;
         };
         if item.path.segments.len() != 2 {
@@ -423,7 +422,7 @@ impl<'tcx> AttrParser<'tcx> {
                 });
             return None;
         }
-        match item.path.segments[1].ident.name {
+        match item.path.segments[1].name {
             v if v == *crate::symbol::preempt_count => Some(KlintAttribute::PreemptionCount(
                 self.parse_preempt_count(attr, item).ok()?,
             )),
@@ -438,7 +437,7 @@ impl<'tcx> AttrParser<'tcx> {
                 self.tcx.node_span_lint(
                     crate::INCORRECT_ATTRIBUTE,
                     self.hir_id,
-                    item.path.segments[1].span(),
+                    item.path.segments[1].span,
                     |lint| {
                         lint.primary_message("unrecognized klint attribute");
                     },
@@ -452,7 +451,7 @@ impl<'tcx> AttrParser<'tcx> {
 pub fn parse_klint_attribute(
     tcx: TyCtxt<'_>,
     hir_id: HirId,
-    attr: &ast::Attribute,
+    attr: &Attribute,
 ) -> Option<KlintAttribute> {
     AttrParser { tcx, hir_id }.parse(attr)
 }
