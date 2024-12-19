@@ -40,11 +40,11 @@ pub enum KlintAttribute {
 
 struct Cursor<'a> {
     eof: TokenTree,
-    cursor: tokenstream::RefTokenTreeCursor<'a>,
+    cursor: tokenstream::TokenStreamIter<'a>,
 }
 
 impl<'a> Cursor<'a> {
-    fn new(cursor: tokenstream::RefTokenTreeCursor<'a>, end_span: Span) -> Self {
+    fn new(cursor: tokenstream::TokenStreamIter<'a>, end_span: Span) -> Self {
         let eof = TokenTree::Token(
             token::Token {
                 kind: token::TokenKind::Eof,
@@ -56,11 +56,11 @@ impl<'a> Cursor<'a> {
     }
 
     fn is_eof(&self) -> bool {
-        self.cursor.look_ahead(0).is_none()
+        self.cursor.peek().is_none()
     }
 
-    fn look_ahead(&self, n: usize) -> &TokenTree {
-        self.cursor.look_ahead(n).unwrap_or(&self.eof)
+    fn peek(&self) -> &TokenTree {
+        self.cursor.peek().unwrap_or(&self.eof)
     }
 
     fn next(&mut self) -> &TokenTree {
@@ -148,7 +148,7 @@ impl<'tcx> AttrParser<'tcx> {
         let need_eq = need_eq(name)?;
 
         // Check and skip `=`.
-        let eq = cursor.look_ahead(0);
+        let eq = cursor.peek();
         let is_eq = matches!(
             eq,
             TokenTree::Token(
@@ -187,7 +187,7 @@ impl<'tcx> AttrParser<'tcx> {
         };
 
         let negative = if matches!(
-            cursor.look_ahead(0),
+            cursor.peek(),
             TokenTree::Token(
                 token::Token {
                     kind: token::TokenKind::BinOp(token::BinOpToken::Minus),
@@ -234,10 +234,10 @@ impl<'tcx> AttrParser<'tcx> {
             })
         };
 
-        let start_span = cursor.look_ahead(0).span();
+        let start_span = cursor.peek().span();
         let mut start = 0;
         if !matches!(
-            cursor.look_ahead(0),
+            cursor.peek(),
             TokenTree::Token(
                 token::Token {
                     kind: token::TokenKind::DotDot | token::TokenKind::DotDotEq,
@@ -266,7 +266,7 @@ impl<'tcx> AttrParser<'tcx> {
             start = v;
         }
 
-        let inclusive = match cursor.look_ahead(0) {
+        let inclusive = match cursor.peek() {
             TokenTree::Token(
                 token::Token {
                     kind: token::TokenKind::DotDot,
@@ -288,7 +288,7 @@ impl<'tcx> AttrParser<'tcx> {
         if let Some(inclusive) = inclusive {
             cursor.next();
 
-            let skip_hi = match cursor.look_ahead(0) {
+            let skip_hi = match cursor.peek() {
                 TokenTree::Token(
                     token::Token {
                         kind: token::TokenKind::Comma | token::TokenKind::Eof,
@@ -355,7 +355,7 @@ impl<'tcx> AttrParser<'tcx> {
             })?;
         };
 
-        self.parse_comma_delimited(Cursor::new(tts.trees(), delim_span.close), |cursor| {
+        self.parse_comma_delimited(Cursor::new(tts.iter(), delim_span.close), |cursor| {
             self.parse_eq_delimited(
                 cursor,
                 |name| {
