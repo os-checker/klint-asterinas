@@ -103,5 +103,5 @@ fn main() {
     rustc_driver::init_logger(&handler, rustc_log::LoggerConfig::from_env("KLINT_LOG"));
     let args: Vec<_> = std::env::args().collect();
 
-    rustc_driver::RunCompiler::new(&args, &mut MyCallbacks).run();
+    rustc_driver::run_compiler(&args, &mut MyCallbacks);
 }
