@@ -2,9 +2,10 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::sync::Arc;
+
 use rustc_ast::tokenstream::{self, TokenTree};
 use rustc_ast::{token, DelimArgs};
-use rustc_data_structures::sync::Lrc;
 use rustc_errors::{Diag, ErrorGuaranteed};
 use rustc_hir::{AttrArgs, AttrItem, AttrKind, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
@@ -460,7 +461,7 @@ memoize!(
     pub fn klint_attributes<'tcx>(
         cx: &AnalysisCtxt<'tcx>,
         hir_id: HirId,
-    ) -> Lrc<Vec<KlintAttribute>> {
+    ) -> Arc<Vec<KlintAttribute>> {
         let mut v = Vec::new();
         for attr in cx.hir().attrs(hir_id) {
             let Some(attr) = crate::attribute::parse_klint_attribute(cx.tcx, hir_id, attr) else {
@@ -468,6 +469,6 @@ memoize!(
             };
             v.push(attr);
         }
-        Lrc::new(v)
+        Arc::new(v)
     }
 );

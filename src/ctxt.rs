@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use rustc_data_structures::fx::FxHashMap;
-use rustc_data_structures::sync::Lrc;
 use rustc_hir::def_id::{CrateNum, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
@@ -52,10 +51,10 @@ pub(crate) trait PersistentQuery: QueryValueDecodable {
 pub struct AnalysisCtxt<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub local_conn: Connection,
-    pub sql_conn: RefCell<FxHashMap<CrateNum, Option<Lrc<Connection>>>>,
+    pub sql_conn: RefCell<FxHashMap<CrateNum, Option<Arc<Connection>>>>,
 
     pub call_stack: RefCell<Vec<UseSite<'tcx>>>,
-    pub query_cache: RefCell<FxHashMap<TypeId, Lrc<dyn Any>>>,
+    pub query_cache: RefCell<FxHashMap<TypeId, Arc<dyn Any>>>,
 }
 
 impl<'tcx> std::ops::Deref for AnalysisCtxt<'tcx> {
@@ -128,13 +127,13 @@ impl ArcDowncast for Arc<dyn Any> {
 impl<'tcx> AnalysisCtxt<'tcx> {
     pub(crate) fn query_cache<Q: Query>(
         &self,
-    ) -> Lrc<RefCell<FxHashMap<Q::Key<'tcx>, Q::Value<'tcx>>>> {
+    ) -> Arc<RefCell<FxHashMap<Q::Key<'tcx>, Q::Value<'tcx>>>> {
         let key = TypeId::of::<Q>();
         let mut guard = self.query_cache.borrow_mut();
         let cache = guard
             .entry(key)
             .or_insert_with(|| {
-                let cache = Lrc::new(RefCell::new(
+                let cache = Arc::new(RefCell::new(
                     FxHashMap::<Q::Key<'static>, Q::Value<'static>>::default(),
                 ));
                 cache
@@ -147,7 +146,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         unsafe { std::mem::transmute(cache) }
     }
 
-    pub(crate) fn sql_connection(&self, cnum: CrateNum) -> Option<Lrc<Connection>> {
+    pub(crate) fn sql_connection(&self, cnum: CrateNum) -> Option<Arc<Connection>> {
         if let Some(v) = self.sql_conn.borrow().get(&cnum) {
             return v.clone();
         }
@@ -188,7 +187,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     );
                 }
 
-                result = Some(Lrc::new(conn));
+                result = Some(Arc::new(conn));
                 break;
             }
         }

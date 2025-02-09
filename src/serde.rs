@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::sync::Arc;
+
 use rustc_data_structures::fx::{FxHashMap, FxIndexSet};
-use rustc_data_structures::sync::Lrc;
 use rustc_middle::mir::interpret::{self, AllocDecodingState, AllocId};
 use rustc_middle::ty::{self, Ty, TyCtxt, TyDecoder, TyEncoder};
 use rustc_serialize::opaque::{MemDecoder, MAGIC_END_BYTES};
@@ -113,7 +114,7 @@ pub struct EncodeContext<'tcx> {
     type_shorthands: FxHashMap<Ty<'tcx>, usize>,
     predicate_shorthands: FxHashMap<ty::PredicateKind<'tcx>, usize>,
     interpret_allocs: FxIndexSet<AllocId>,
-    relative_file: Lrc<SourceFile>,
+    relative_file: Arc<SourceFile>,
 }
 
 impl<'tcx> EncodeContext<'tcx> {
@@ -239,7 +240,7 @@ impl<'tcx> SpanEncoder for EncodeContext<'tcx> {
             return TAG_PARTIAL_SPAN.encode(self);
         }
 
-        if Lrc::ptr_eq(&pos.sf, &self.relative_file) {
+        if Arc::ptr_eq(&pos.sf, &self.relative_file) {
             TAG_RELATIVE_SPAN.encode(self);
             (span.lo - self.relative_file.start_pos).encode(self);
             (span.hi - self.relative_file.start_pos).encode(self);
@@ -274,9 +275,9 @@ pub struct DecodeContext<'a, 'tcx> {
     decoder: MemDecoder<'a>,
     tcx: TyCtxt<'tcx>,
     type_shorthands: FxHashMap<usize, Ty<'tcx>>,
-    alloc_decoding_state: Lrc<AllocDecodingState>,
+    alloc_decoding_state: Arc<AllocDecodingState>,
     replacement_span: Span,
-    relative_file: Lrc<SourceFile>,
+    relative_file: Arc<SourceFile>,
 }
 
 impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
@@ -289,7 +290,7 @@ impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
         let mut decoder = MemDecoder::new(bytes, vec_position).unwrap();
         let interpret_alloc_index = Vec::<u64>::decode(&mut decoder);
         let alloc_decoding_state =
-            Lrc::new(interpret::AllocDecodingState::new(interpret_alloc_index));
+            Arc::new(interpret::AllocDecodingState::new(interpret_alloc_index));
 
         Self {
             decoder: MemDecoder::new(bytes, 0).unwrap(),
