@@ -5,6 +5,7 @@
 // From rustc_mir_transform/src/shim.rs
 // Adopted to support polymorphic drop shims
 
+use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_hir::def_id::DefId;
 use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir::patch::MirPatch;
@@ -12,7 +13,6 @@ use rustc_middle::mir::*;
 use rustc_middle::ty::{self, EarlyBinder, Ty, TyCtxt, TypingEnv};
 use rustc_mir_dataflow::elaborate_drops::{self, *};
 use rustc_span::Span;
-use rustc_target::abi::{FieldIdx, VariantIdx};
 use std::{fmt, iter};
 
 use crate::ctxt::AnalysisCtxt;
