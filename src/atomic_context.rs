@@ -311,8 +311,8 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
             /// Because lints are scoped lexically, we want to walk nested
             /// items in the context of the outer item, so enable
             /// deep-walking.
-            fn nested_visit_map(&mut self) -> Self::Map {
-                self.tcx.hir()
+            fn maybe_tcx(&mut self) -> Self::MaybeTyCtxt {
+                self.tcx
             }
 
             fn visit_item(&mut self, i: &'tcx Item<'tcx>) {
