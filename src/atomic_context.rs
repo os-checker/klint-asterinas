@@ -364,8 +364,7 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
 
         // Do this before the lint pass to ensure that errors, if any, are nicely sorted.
         self.cx
-            .hir()
-            .visit_all_item_likes_in_crate(&mut FnAdtVisitor {
+            .hir_visit_all_item_likes_in_crate(&mut FnAdtVisitor {
                 tcx: self.cx.tcx,
                 fn_callback: |def_id: LocalDefId| {
                     let annotation = self.cx.preemption_count_annotation(def_id.into());
