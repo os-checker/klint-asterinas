@@ -283,7 +283,7 @@ fn collect_items_rec<'tcx>(
             recursion_depth_reset = None;
 
             let item = tcx.hir_item(item_id);
-            if let hir::ItemKind::GlobalAsm(asm) = item.kind {
+            if let hir::ItemKind::GlobalAsm { asm, .. } = item.kind {
                 for (op, op_sp) in asm.operands {
                     match op {
                         hir::InlineAsmOperand::Const { .. } => {
@@ -291,10 +291,8 @@ fn collect_items_rec<'tcx>(
                             // are supported. Therefore the value should not
                             // depend on any other items.
                         }
-                        hir::InlineAsmOperand::SymFn { anon_const } => {
-                            let fn_ty = tcx
-                                .typeck_body(anon_const.body)
-                                .node_type(anon_const.hir_id);
+                        hir::InlineAsmOperand::SymFn { expr } => {
+                            let fn_ty = tcx.typeck(item_id.owner_id).expr_ty(expr);
                             visit_fn_use(tcx, fn_ty, false, *op_sp, &mut used_items);
                         }
                         hir::InlineAsmOperand::SymStatic { path: _, def_id } => {
