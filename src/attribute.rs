@@ -7,7 +7,7 @@ use std::sync::Arc;
 use rustc_ast::tokenstream::{self, TokenTree};
 use rustc_ast::{token, DelimArgs};
 use rustc_errors::{Diag, ErrorGuaranteed};
-use rustc_hir::{AttrArgs, AttrItem, AttrKind, Attribute, HirId};
+use rustc_hir::{AttrArgs, AttrItem, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::symbol::Ident;
 use rustc_span::Span;
@@ -351,7 +351,7 @@ impl<'tcx> AttrParser<'tcx> {
             ..
         }) = &item.args
         else {
-            self.error(attr.span, |diag| {
+            self.error(attr.span(), |diag| {
                 diag.help("correct usage looks like `#[kint::preempt_count(...)]`");
             })?;
         };
@@ -410,7 +410,7 @@ impl<'tcx> AttrParser<'tcx> {
     }
 
     fn parse(&self, attr: &Attribute) -> Option<KlintAttribute> {
-        let AttrKind::Normal(item) = &attr.kind else {
+        let Attribute::Unparsed(item) = attr else {
             return None;
         };
         if item.path.segments[0].name != *crate::symbol::klint {
@@ -418,7 +418,7 @@ impl<'tcx> AttrParser<'tcx> {
         };
         if item.path.segments.len() != 2 {
             self.tcx
-                .node_span_lint(crate::INCORRECT_ATTRIBUTE, self.hir_id, attr.span, |lint| {
+                .node_span_lint(crate::INCORRECT_ATTRIBUTE, self.hir_id, item.span, |lint| {
                     lint.primary_message("invalid klint attribute");
                 });
             return None;
