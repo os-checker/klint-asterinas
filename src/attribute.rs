@@ -191,7 +191,7 @@ impl<'tcx> AttrParser<'tcx> {
             cursor.peek(),
             TokenTree::Token(
                 token::Token {
-                    kind: token::TokenKind::BinOp(token::BinOpToken::Minus),
+                    kind: token::TokenKind::Minus,
                     ..
                 },
                 _

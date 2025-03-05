@@ -10,7 +10,7 @@
 // * `Spanned<MonoItem>` is returned in `AccessMap` instead of just `MonoItem`.
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_data_structures::sync::{par_for_each_in, MTLock, MTLockRef};
+use rustc_data_structures::sync::{par_for_each_in, MTLock};
 use rustc_hir as hir;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{DefId, DefIdMap, LocalDefId};
@@ -119,38 +119,33 @@ pub fn collect_crate_mono_items(
 
     debug!("building mono item graph, beginning at roots");
 
-    let mut visited = MTLock::new(FxHashSet::default());
-    let mut usage_map = MTLock::new(UsageMap::new());
+    let visited = MTLock::new(FxHashSet::default());
+    let usage_map = MTLock::new(UsageMap::new());
     let recursion_limit = tcx.recursion_limit();
 
-    {
-        let visited: MTLockRef<'_, _> = &mut visited;
-        let usage_map: MTLockRef<'_, _> = &mut usage_map;
-
-        tcx.sess.time("monomorphization_collector_graph_walk", || {
-            par_for_each_in(roots, |root| {
-                let mut recursion_depths = DefIdMap::default();
-                let should_gen = match root {
-                    MonoItem::Static(def_id) => {
-                        let instance = Instance::mono(tcx, def_id);
-                        should_codegen_locally(tcx, &instance)
-                    }
-                    MonoItem::Fn(instance) => should_codegen_locally(tcx, &instance),
-                    MonoItem::GlobalAsm(_) => true,
-                };
-                if should_gen {
-                    collect_items_rec(
-                        tcx,
-                        dummy_spanned(root),
-                        visited,
-                        &mut recursion_depths,
-                        recursion_limit,
-                        usage_map,
-                    );
+    tcx.sess.time("monomorphization_collector_graph_walk", || {
+        par_for_each_in(roots, |root| {
+            let mut recursion_depths = DefIdMap::default();
+            let should_gen = match root {
+                MonoItem::Static(def_id) => {
+                    let instance = Instance::mono(tcx, def_id);
+                    should_codegen_locally(tcx, &instance)
                 }
-            });
+                MonoItem::Fn(instance) => should_codegen_locally(tcx, &instance),
+                MonoItem::GlobalAsm(_) => true,
+            };
+            if should_gen {
+                collect_items_rec(
+                    tcx,
+                    dummy_spanned(root),
+                    &visited,
+                    &mut recursion_depths,
+                    recursion_limit,
+                    &usage_map,
+                );
+            }
         });
-    }
+    });
 
     (visited.into_inner(), usage_map.into_inner())
 }
@@ -204,10 +199,10 @@ fn collect_roots(tcx: TyCtxt<'_>, mode: MonoItemCollectionMode) -> Vec<MonoItem<
 fn collect_items_rec<'tcx>(
     tcx: TyCtxt<'tcx>,
     starting_item: Spanned<MonoItem<'tcx>>,
-    visited: MTLockRef<'_, FxHashSet<MonoItem<'tcx>>>,
+    visited: &MTLock<FxHashSet<MonoItem<'tcx>>>,
     recursion_depths: &mut DefIdMap<usize>,
     recursion_limit: Limit,
-    usage_map: MTLockRef<'_, UsageMap<'tcx>>,
+    usage_map: &MTLock<UsageMap<'tcx>>,
 ) {
     if !visited.lock_mut().insert(starting_item.node) {
         // We've been here already, no need to search again.
