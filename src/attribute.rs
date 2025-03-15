@@ -463,7 +463,7 @@ memoize!(
         hir_id: HirId,
     ) -> Arc<Vec<KlintAttribute>> {
         let mut v = Vec::new();
-        for attr in cx.hir().attrs(hir_id) {
+        for attr in cx.hir_attrs(hir_id) {
             let Some(attr) = crate::attribute::parse_klint_attribute(cx.tcx, hir_id, attr) else {
                 continue;
             };
