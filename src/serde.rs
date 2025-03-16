@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use rustc_data_structures::fx::{FxHashMap, FxIndexSet};
 use rustc_middle::mir::interpret::{self, AllocDecodingState, AllocId};
-use rustc_middle::ty::{self, Ty, TyCtxt, TyDecoder, TyEncoder};
+use rustc_middle::ty::codec::{TyDecoder, TyEncoder};
+use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_serialize::opaque::{MemDecoder, MAGIC_END_BYTES};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_session::StableCrateId;
@@ -188,10 +189,8 @@ impl<'a, 'tcx> Encoder for EncodeContext<'tcx> {
     }
 }
 
-impl<'tcx> TyEncoder for EncodeContext<'tcx> {
+impl<'tcx> TyEncoder<'tcx> for EncodeContext<'tcx> {
     const CLEAR_CROSS_CRATE: bool = true;
-
-    type I = TyCtxt<'tcx>;
 
     fn position(&self) -> usize {
         self.encoder.position()
@@ -345,13 +344,11 @@ impl<'a, 'tcx> Decoder for DecodeContext<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> TyDecoder for DecodeContext<'a, 'tcx> {
+impl<'a, 'tcx> TyDecoder<'tcx> for DecodeContext<'a, 'tcx> {
     const CLEAR_CROSS_CRATE: bool = true;
 
-    type I = TyCtxt<'tcx>;
-
     #[inline]
-    fn interner(&self) -> Self::I {
+    fn interner(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
 
