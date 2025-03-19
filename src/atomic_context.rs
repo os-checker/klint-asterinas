@@ -116,18 +116,6 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             | "__udivmodti4" | "__udivti3" | "__umodti3" | "__aeabi_fcmpeq" | "__aeabi_fcmpun"
             | "__aeabi_dcmpun" | "__aeabi_uldivmod" => NO_ASSUMPTION,
 
-            // Memory allocations glues depended by liballoc.
-            // Allocation functions may sleep.
-            "__rust_alloc"
-            | "__rust_alloc_zeroed"
-            | "__rust_realloc"
-            | "__rg_alloc"
-            | "__rg_alloc_zeroed"
-            | "__rg_realloc" => MIGHT_SLEEP,
-
-            // Deallocation function will not sleep.
-            "__rust_dealloc" | "__rg_dealloc" => USE_SPINLOCK,
-
             // `init_module` and `cleanup_module` exposed from Rust modules are allowed to sleep.
             "init_module" | "cleanup_module" => MIGHT_SLEEP,
 
@@ -258,6 +246,18 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             // workqueue.h
             "__INIT_WORK_WITH_KEY" | "queue_work_on" => NO_ASSUMPTION,
             "destroy_workqueue" => MIGHT_SLEEP,
+
+            // Memory allocations glues depended by liballoc.
+            // Allocation functions may sleep.
+            f if f.ends_with("__rust_alloc")
+                || f.ends_with("__rust_alloc_zeroed")
+                || f.ends_with("__rust_realloc") =>
+            {
+                MIGHT_SLEEP
+            }
+
+            // Deallocation function will not sleep.
+            f if f.ends_with("__rust_dealloc") => USE_SPINLOCK,
 
             _ => {
                 warn!("Unable to determine property for FFI function `{}`", symbol);
