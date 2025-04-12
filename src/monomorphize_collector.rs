@@ -22,7 +22,7 @@ use rustc_middle::mir::visit::Visitor as MirVisitor;
 use rustc_middle::mir::{self, Local, Location};
 use rustc_middle::query::TyCtxtAt;
 use rustc_middle::ty::adjustment::{CustomCoerceUnsized, PointerCoercion};
-use rustc_middle::ty::print::with_no_trimmed_paths;
+use rustc_middle::ty::print::{shrunk_instance_name, with_no_trimmed_paths};
 use rustc_middle::ty::{
     self, GenericArgKind, GenericArgs, GenericParamDefKind, Instance, Ty, TyCtxt, TypeFoldable,
     TypeVisitableExt, VtblEntry,
@@ -34,7 +34,6 @@ use rustc_span::source_map::{dummy_spanned, respan, Spanned};
 use rustc_span::{ErrorGuaranteed, Span, DUMMY_SP};
 use rustc_trait_selection::traits;
 use std::ops::Range;
-use std::path::PathBuf;
 
 // From rustc_monomorphize/lib.rs
 fn custom_coerce_unsize_info<'tcx>(
@@ -126,7 +125,7 @@ pub fn collect_crate_mono_items(
     tcx.sess.time("monomorphization_collector_graph_walk", || {
         par_for_each_in(roots, |root| {
             let mut recursion_depths = DefIdMap::default();
-            let should_gen = match root {
+            let should_gen = match *root {
                 MonoItem::Static(def_id) => {
                     let instance = Instance::mono(tcx, def_id);
                     should_codegen_locally(tcx, &instance)
@@ -137,7 +136,7 @@ pub fn collect_crate_mono_items(
             if should_gen {
                 collect_items_rec(
                     tcx,
-                    dummy_spanned(root),
+                    dummy_spanned(*root),
                     &visited,
                     &mut recursion_depths,
                     recursion_limit,
@@ -355,36 +354,6 @@ fn collect_items_rec<'tcx>(
 
     if let Some((def_id, depth)) = recursion_depth_reset {
         recursion_depths.insert(def_id, depth);
-    }
-}
-
-/// Format instance name that is already known to be too long for rustc.
-/// Show only the first 2 types if it is longer than 32 characters to avoid blasting
-/// the user's terminal with thousands of lines of type-name.
-///
-/// If the type name is longer than before+after, it will be written to a file.
-fn shrunk_instance_name<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    instance: Instance<'tcx>,
-) -> (String, Option<PathBuf>) {
-    let s = instance.to_string();
-
-    // Only use the shrunk version if it's really shorter.
-    // This also avoids the case where before and after slices overlap.
-    if s.chars().nth(33).is_some() {
-        let shrunk = format!("{}", ty::ShortInstance(instance, 4));
-        if shrunk == s {
-            return (s, None);
-        }
-
-        let path = tcx
-            .output_filenames(())
-            .temp_path_ext("long-type.txt", None);
-        let written_to_path = std::fs::write(&path, s).ok().map(|_| path);
-
-        (shrunk, written_to_path)
-    } else {
-        (s, None)
     }
 }
 
