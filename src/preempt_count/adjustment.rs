@@ -300,7 +300,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         for (b, data) in rustc_middle::mir::traversal::reachable(body) {
             match data.terminator().kind {
                 TerminatorKind::Return => {
-                    adjustment.join(&analysis_result.results().entry_set_for_block(b));
+                    analysis_result.seek_to_block_start(b);
+                    adjustment.join(&analysis_result.get());
                 }
                 _ => (),
             }
