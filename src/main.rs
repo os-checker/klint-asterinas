@@ -23,6 +23,7 @@ extern crate rustc_log;
 extern crate rustc_macros;
 #[macro_use]
 extern crate rustc_middle;
+extern crate itertools;
 extern crate rustc_abi;
 extern crate rustc_mir_dataflow;
 extern crate rustc_monomorphize;

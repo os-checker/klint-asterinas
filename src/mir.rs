@@ -216,8 +216,10 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             | ty::InstanceKind::DropGlue(..)
             | ty::InstanceKind::CloneShim(..)
             | ty::InstanceKind::ThreadLocalShim(..)
+            | ty::InstanceKind::FutureDropPollShim(..)
             | ty::InstanceKind::FnPtrAddrShim(..)
-            | ty::InstanceKind::AsyncDropGlueCtorShim(..) => self.mir_shims(instance),
+            | ty::InstanceKind::AsyncDropGlueCtorShim(..)
+            | ty::InstanceKind::AsyncDropGlue(..) => self.mir_shims(instance),
         }
     }
 }

@@ -85,6 +85,7 @@ pub fn build_drop_shim<'tcx>(
             patch: MirPatch::new(&body),
             tcx: cx.tcx,
             typing_env,
+            produce_async_drops: false,
         };
         let dropee = cx.mk_place_deref(dropee_ptr);
         let resume_block = elaborator.patch.resume_block();
@@ -96,6 +97,7 @@ pub fn build_drop_shim<'tcx>(
             return_block,
             elaborate_drop::Unwind::To(resume_block),
             START_BLOCK,
+            None,
         );
         elaborator.patch
     };
@@ -110,7 +112,7 @@ fn new_body<'tcx>(
     arg_count: usize,
     span: Span,
 ) -> Body<'tcx> {
-    Body::new(
+    let mut body = Body::new(
         source,
         basic_blocks,
         IndexVec::from_elem_n(
@@ -131,7 +133,9 @@ fn new_body<'tcx>(
         None,
         // FIXME(compiler-errors): is this correct?
         None,
-    )
+    );
+    body.set_required_consts(Vec::new());
+    body
 }
 
 pub struct DropShimElaborator<'a, 'tcx> {
@@ -139,6 +143,7 @@ pub struct DropShimElaborator<'a, 'tcx> {
     pub patch: MirPatch<'tcx>,
     pub tcx: TyCtxt<'tcx>,
     pub typing_env: ty::TypingEnv<'tcx>,
+    pub produce_async_drops: bool,
 }
 
 impl fmt::Debug for DropShimElaborator<'_, '_> {
@@ -150,6 +155,9 @@ impl fmt::Debug for DropShimElaborator<'_, '_> {
 impl<'a, 'tcx> DropElaborator<'a, 'tcx> for DropShimElaborator<'a, 'tcx> {
     type Path = ();
 
+    fn patch_ref(&self) -> &MirPatch<'tcx> {
+        &self.patch
+    }
     fn patch(&mut self) -> &mut MirPatch<'tcx> {
         &mut self.patch
     }
@@ -161,6 +169,13 @@ impl<'a, 'tcx> DropElaborator<'a, 'tcx> for DropShimElaborator<'a, 'tcx> {
     }
     fn typing_env(&self) -> ty::TypingEnv<'tcx> {
         self.typing_env
+    }
+
+    fn terminator_loc(&self, bb: BasicBlock) -> Location {
+        self.patch.terminator_loc(self.body, bb)
+    }
+    fn allow_async_drops(&self) -> bool {
+        self.produce_async_drops
     }
 
     fn drop_style(&self, _path: Self::Path, mode: DropFlagMode) -> DropStyle {
