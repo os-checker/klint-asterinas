@@ -951,7 +951,7 @@ impl<'v> RootCollector<'_, 'v> {
                     debug!("RootCollector: ADT drop-glue for {id:?}",);
 
                     let item = self.tcx.hir_item(id);
-                    let ty = Instance::new(item.owner_id.to_def_id(), GenericArgs::empty())
+                    let ty = Instance::new_raw(item.owner_id.to_def_id(), GenericArgs::empty())
                         .ty(self.tcx, ty::TypingEnv::fully_monomorphized());
                     visit_drop_use(self.tcx, ty, true, DUMMY_SP, self.output);
                 }
