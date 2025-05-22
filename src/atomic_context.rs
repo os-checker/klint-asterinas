@@ -393,6 +393,15 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
         _: rustc_span::Span,
         def_id: LocalDefId,
     ) {
+        // Skip checks for proc-macro crates.
+        if self
+            .cx
+            .crate_types()
+            .contains(&rustc_session::config::CrateType::ProcMacro)
+        {
+            return;
+        }
+
         // Building MIR for `fn`s with unsatisfiable preds results in ICE.
         if crate::util::fn_has_unsatisfiable_preds(cx, def_id.to_def_id()) {
             return;
@@ -409,6 +418,15 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
     }
 
     fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
+        // Skip checks for proc-macro crates.
+        if self
+            .cx
+            .crate_types()
+            .contains(&rustc_session::config::CrateType::ProcMacro)
+        {
+            return;
+        }
+
         let mono_items = super::monomorphize_collector::collect_crate_mono_items(
             cx.tcx,
             crate::monomorphize_collector::MonoItemCollectionMode::Eager,
