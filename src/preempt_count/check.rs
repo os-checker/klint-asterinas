@@ -365,8 +365,7 @@ impl<'mir, 'tcx, 'cx> MirVisitor<'tcx> for MirNeighborVisitor<'mir, 'tcx, 'cx> {
         }
 
         let const_ = self.monomorphize(constant.const_);
-        let typing_env = ty::TypingEnv::fully_monomorphized();
-        let val = match const_.eval(self.cx.tcx, typing_env, constant.span) {
+        let val = match const_.eval(self.cx.tcx, self.typing_env, constant.span) {
             Ok(v) => v,
             Err(ErrorHandled::Reported(..)) => return,
             Err(ErrorHandled::TooGeneric(..)) => {
