@@ -5,7 +5,7 @@
 use rustc_middle::mir::{BasicBlock, Body, TerminatorEdges, TerminatorKind};
 use rustc_middle::ty::{self, Instance, TypingEnv};
 use rustc_mir_dataflow::JoinSemiLattice;
-use rustc_mir_dataflow::{fmt::DebugWithContext, Analysis};
+use rustc_mir_dataflow::{Analysis, fmt::DebugWithContext};
 
 use super::{Error, UseSite, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;

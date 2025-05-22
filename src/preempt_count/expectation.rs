@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use rustc_errors::{EmissionGuarantee, MultiSpan};
-use rustc_hir::def_id::CrateNum;
 use rustc_hir::LangItem;
+use rustc_hir::def_id::CrateNum;
 use rustc_middle::mir::{self, Body, TerminatorKind};
 use rustc_middle::ty::{
     self, GenericArgs, Instance, PseudoCanonicalInput, Ty, TypingEnv, TypingMode,
@@ -996,7 +996,7 @@ memoize!(
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(ExpectationRange::top()),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_expectation(typing_env.as_query_input(ty))
+                return cx.drop_expectation(typing_env.as_query_input(ty));
             }
             ty::InstanceKind::Virtual(def_id, _) => {
                 if let Some(exp) = cx.preemption_count_annotation(def_id).expectation {
@@ -1161,7 +1161,7 @@ memoize!(
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(()),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_expectation_check(typing_env.as_query_input(ty))
+                return cx.drop_expectation_check(typing_env.as_query_input(ty));
             }
             // Checked by indirect checks
             ty::InstanceKind::Virtual(_, _) => return Ok(()),

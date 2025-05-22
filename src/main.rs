@@ -5,7 +5,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(if_let_guard)]
-#![feature(let_chains)]
 #![feature(never_type)]
 #![warn(rustc::internal)]
 
@@ -40,8 +39,8 @@ use std::sync::atomic::AtomicPtr;
 
 use rustc_driver::Callbacks;
 use rustc_interface::interface::Config;
-use rustc_session::config::ErrorOutputType;
 use rustc_session::EarlyDiagCtxt;
+use rustc_session::config::ErrorOutputType;
 use std::sync::atomic::Ordering;
 
 #[macro_use]

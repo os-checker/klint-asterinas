@@ -10,7 +10,7 @@
 // * `Spanned<MonoItem>` is returned in `AccessMap` instead of just `MonoItem`.
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_data_structures::sync::{par_for_each_in, MTLock};
+use rustc_data_structures::sync::{MTLock, par_for_each_in};
 use rustc_hir as hir;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{DefId, DefIdMap, LocalDefId};
@@ -28,10 +28,10 @@ use rustc_middle::ty::{
     TypeVisitableExt, VtblEntry,
 };
 use rustc_middle::{middle::codegen_fn_attrs::CodegenFnAttrFlags, mir::visit::TyContext};
-use rustc_session::config::EntryFnType;
 use rustc_session::Limit;
-use rustc_span::source_map::{dummy_spanned, respan, Spanned};
-use rustc_span::{ErrorGuaranteed, Span, DUMMY_SP};
+use rustc_session::config::EntryFnType;
+use rustc_span::source_map::{Spanned, dummy_spanned, respan};
+use rustc_span::{DUMMY_SP, ErrorGuaranteed, Span};
 use rustc_trait_selection::traits;
 use std::ops::Range;
 
@@ -899,7 +899,7 @@ fn create_mono_items_for_vtable_methods<'tcx>(
 ) {
     assert!(!trait_ty.has_escaping_bound_vars() && !impl_ty.has_escaping_bound_vars());
 
-    if let ty::Dynamic(ref trait_ty, ..) = trait_ty.kind() {
+    if let ty::Dynamic(trait_ty, ..) = trait_ty.kind() {
         if let Some(principal) = trait_ty.principal() {
             let trait_ref =
                 tcx.instantiate_bound_regions_with_erased(principal.with_self_ty(tcx, impl_ty));

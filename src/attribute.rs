@@ -5,12 +5,12 @@
 use std::sync::Arc;
 
 use rustc_ast::tokenstream::{self, TokenTree};
-use rustc_ast::{token, DelimArgs};
+use rustc_ast::{DelimArgs, token};
 use rustc_errors::{Diag, ErrorGuaranteed};
 use rustc_hir::{AttrArgs, AttrItem, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
-use rustc_span::symbol::Ident;
 use rustc_span::Span;
+use rustc_span::symbol::Ident;
 
 use crate::preempt_count::ExpectationRange;
 

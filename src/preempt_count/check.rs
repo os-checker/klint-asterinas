@@ -2,11 +2,11 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use rustc_hir::def_id::DefId;
 use rustc_hir::LangItem;
+use rustc_hir::def_id::DefId;
 use rustc_infer::traits::util::PredicateSet;
 use rustc_middle::mir::interpret::{AllocId, ErrorHandled, GlobalAlloc, Scalar};
-use rustc_middle::mir::{self, visit::Visitor as MirVisitor, Body, Location};
+use rustc_middle::mir::{self, Body, Location, visit::Visitor as MirVisitor};
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::{
     self, GenericArgs, GenericParamDefKind, Instance, PseudoCanonicalInput, Ty, TyCtxt,
@@ -40,10 +40,10 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
         target_ty: Ty<'tcx>,
         span: Span,
     ) -> Result<(), Error> {
-        let ty::Dynamic(ref source_trait_ref, ..) = source_ty.kind() else {
+        let ty::Dynamic(source_trait_ref, ..) = source_ty.kind() else {
             bug!()
         };
-        let ty::Dynamic(ref target_trait_ref, ..) = target_ty.kind() else {
+        let ty::Dynamic(target_trait_ref, ..) = target_ty.kind() else {
             bug!()
         };
 
@@ -144,7 +144,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                         source_ty,
                         target_ty,
                     );
-                if let ty::Dynamic(ref trait_ty, ..) = target_ty.kind() {
+                if let ty::Dynamic(trait_ty, ..) = target_ty.kind() {
                     if let ty::Dynamic(..) = source_ty.kind() {
                         // This is trait upcasting.
                         self.check_vtable_unsizing(source_ty, target_ty, span)?;
@@ -781,7 +781,7 @@ memoize!(
             // Empty drop glue, then it is a no-op.
             ty::InstanceKind::DropGlue(_, None) => return Ok(()),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_check(typing_env.as_query_input(ty))
+                return cx.drop_check(typing_env.as_query_input(ty));
             }
             // Can't check further here. Will be checked at vtable generation site.
             ty::InstanceKind::Virtual(_, _) => return Ok(()),

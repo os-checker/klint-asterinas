@@ -19,7 +19,7 @@ use rustc_middle::mir::{
 };
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_span::def_id::{CrateNum, DefId, DefIndex, LocalDefId};
-use rustc_span::{source_map::Spanned, sym, DUMMY_SP};
+use rustc_span::{DUMMY_SP, source_map::Spanned, sym};
 
 use crate::ctxt::AnalysisCtxt;
 use crate::ctxt::PersistentQuery;

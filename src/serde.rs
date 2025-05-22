@@ -8,13 +8,13 @@ use rustc_data_structures::fx::{FxHashMap, FxIndexSet};
 use rustc_middle::mir::interpret::{self, AllocDecodingState, AllocId};
 use rustc_middle::ty::codec::{TyDecoder, TyEncoder};
 use rustc_middle::ty::{self, Ty, TyCtxt};
-use rustc_serialize::opaque::{MemDecoder, MAGIC_END_BYTES};
+use rustc_serialize::opaque::{MAGIC_END_BYTES, MemDecoder};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_session::StableCrateId;
 use rustc_span::def_id::{CrateNum, DefId, DefIndex};
 use rustc_span::{
-    BytePos, SourceFile, Span, SpanDecoder, SpanEncoder, StableSourceFileId, Symbol, SyntaxContext,
-    DUMMY_SP,
+    BytePos, DUMMY_SP, SourceFile, Span, SpanDecoder, SpanEncoder, StableSourceFileId, Symbol,
+    SyntaxContext,
 };
 
 // This is the last available version of `MemEncoder` in rustc_serialize::opaque before its removal.

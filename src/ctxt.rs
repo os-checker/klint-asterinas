@@ -11,7 +11,7 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::{CrateNum, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::{DUMMY_SP, Span};
 
 use crate::preempt_count::UseSite;
 

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed, MultiSpan};
-use rustc_hir::def_id::{CrateNum, DefId};
 use rustc_hir::LangItem;
+use rustc_hir::def_id::{CrateNum, DefId};
 use rustc_middle::mir::{Body, TerminatorKind, UnwindAction};
 use rustc_middle::ty::{
     self, GenericArgs, Instance, PseudoCanonicalInput, Ty, TypingEnv, TypingMode,
@@ -248,7 +248,9 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
             let mut msg = match start_adjustment.is_single_value() {
                 None => {
-                    format!("preemption count adjustment is changed in the previous iteration of the loop")
+                    format!(
+                        "preemption count adjustment is changed in the previous iteration of the loop"
+                    )
                 }
                 Some(_) => {
                     format!(
@@ -654,7 +656,7 @@ memoize!(
             // Empty drop glue, then it definitely won't mess with preemption count.
             ty::InstanceKind::DropGlue(_, None) => return Ok(0),
             ty::InstanceKind::DropGlue(_, Some(ty)) => {
-                return cx.drop_adjustment(typing_env.as_query_input(ty))
+                return cx.drop_adjustment(typing_env.as_query_input(ty));
             }
             ty::InstanceKind::Virtual(def_id, _) => {
                 if let Some(adj) = cx.preemption_count_annotation(def_id).adjustment {

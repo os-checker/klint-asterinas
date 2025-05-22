@@ -4,7 +4,7 @@
 
 use std::{fmt, iter, mem};
 
-use rustc_abi::{FieldIdx, VariantIdx, FIRST_VARIANT};
+use rustc_abi::{FIRST_VARIANT, FieldIdx, VariantIdx};
 use rustc_hir::lang_items::LangItem;
 use rustc_index::Idx;
 use rustc_middle::mir::*;
@@ -12,8 +12,8 @@ use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::util::IntTypeExt;
 use rustc_middle::ty::{self, GenericArg, GenericArgsRef, Ty, TyCtxt};
 use rustc_middle::{span_bug, traits};
-use rustc_span::source_map::{dummy_spanned, Spanned};
 use rustc_span::DUMMY_SP;
+use rustc_span::source_map::{Spanned, dummy_spanned};
 use tracing::{debug, instrument};
 
 use super::patch::MirPatch;
