@@ -136,6 +136,33 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             };
         }
 
+        if data.len() == 5
+            && let DefPathData::TypeNs(slice) = data[0].data
+            && slice == sym::slice
+            && let DefPathData::TypeNs(sort) = data[1].data
+            && sort == *crate::symbol::sort
+            && let DefPathData::TypeNs(unstable) = data[2].data
+            && unstable == sym::unstable
+            && let DefPathData::TypeNs(quicksort) = data[3].data
+            && quicksort == *crate::symbol::quicksort
+            && let DefPathData::ValueNs(partition) = data[4].data
+            && partition == *crate::symbol::partition
+        {
+            // HACK: `core::sort::unstable::quicksort::partition` uses a const fn to produce a
+            // function pointer which is called at runtime. This means that it'll guarantee to be
+            // the same function, so in theory we could see through and check, but this is
+            // currently beyond klint's ability.
+            //
+            // Given this is an internal function and it's only called by `quicksort`, which
+            // already calls into `is_less` in other means, we shouldn't need to depend on
+            // `partition` to deduce correct property.
+            return PreemptionCount {
+                adjustment: Some(0),
+                expectation: Some(super::ExpectationRange::top()),
+                unchecked: true,
+            };
+        }
+
         Default::default()
     }
 }

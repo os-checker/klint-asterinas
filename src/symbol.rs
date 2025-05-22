@@ -29,4 +29,7 @@ def! {
     Waker,
     wake,
     wake_by_ref,
+    sort,
+    quicksort,
+    partition,
 }
