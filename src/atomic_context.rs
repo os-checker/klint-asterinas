@@ -105,8 +105,6 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         Some(match symbol {
-            // Interfacing between libcore and panic runtime
-            "rust_begin_unwind" => NO_ASSUMPTION,
             // Basic string operations depended by libcore.
             "memcmp" | "strlen" | "memchr" => NO_ASSUMPTION,
 
@@ -258,6 +256,9 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
             // Deallocation function will not sleep.
             f if f.ends_with("__rust_dealloc") => USE_SPINLOCK,
+
+            // Interfacing between libcore and panic runtime
+            f if f.ends_with("rust_begin_unwind") => NO_ASSUMPTION,
 
             _ => {
                 warn!("Unable to determine property for FFI function `{}`", symbol);
