@@ -201,6 +201,12 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             "__cant_sleep" => (0, ExpectationRange { lo: 1, hi: None }),
             "__might_sleep" => MIGHT_SLEEP,
 
+            // list_lru.h
+            "list_lru_add" | "list_lru_add_obj" | "list_lru_del_obj" | "list_lru_walk" => {
+                USE_SPINLOCK
+            }
+            "list_lru_count" => NO_ASSUMPTION,
+
             // moduleparam.h
             "kernel_param_lock" => MIGHT_SLEEP,
             "kernel_param_unlock" => MIGHT_SLEEP,
@@ -242,6 +248,9 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             // sched/signal.h
             "signal_pending" => NO_ASSUMPTION,
 
+            // seq_file.h
+            "seq_printf" => NO_ASSUMPTION,
+
             // slab.h
             // What krealloc does depend on flags. Assume it may sleep for conservative purpose.
             "krealloc" => MIGHT_SLEEP,
@@ -272,6 +281,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             // workqueue.h
             "__INIT_WORK_WITH_KEY" | "queue_work_on" => NO_ASSUMPTION,
             "destroy_workqueue" => MIGHT_SLEEP,
+
+            f if f.starts_with("rust_do_trace") => NO_ASSUMPTION,
 
             _ => {
                 warn!("Unable to determine property for FFI function `{}`", symbol);
