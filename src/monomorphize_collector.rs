@@ -24,8 +24,8 @@ use rustc_middle::query::TyCtxtAt;
 use rustc_middle::ty::adjustment::{CustomCoerceUnsized, PointerCoercion};
 use rustc_middle::ty::print::{shrunk_instance_name, with_no_trimmed_paths};
 use rustc_middle::ty::{
-    self, GenericArgKind, GenericArgs, GenericParamDefKind, Instance, Ty, TyCtxt, TypeFoldable,
-    TypeVisitableExt, VtblEntry,
+    self, GenericArgs, GenericParamDefKind, Instance, Ty, TyCtxt, TypeFoldable, TypeVisitableExt,
+    VtblEntry,
 };
 use rustc_middle::{middle::codegen_fn_attrs::CodegenFnAttrFlags, mir::visit::TyContext};
 use rustc_session::Limit;
@@ -267,7 +267,6 @@ fn collect_items_rec<'tcx>(
                 recursion_depths,
                 recursion_limit,
             ));
-            check_type_length_limit(tcx, instance);
 
             rustc_data_structures::stack::ensure_sufficient_stack(|| {
                 collect_used_items(tcx, instance, &mut used_items);
@@ -401,47 +400,6 @@ fn check_recursion_limit<'tcx>(
     recursion_depths.insert(def_id, recursion_depth + 1);
 
     (def_id, recursion_depth)
-}
-
-fn check_type_length_limit<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) {
-    let type_length = instance
-        .args
-        .iter()
-        .flat_map(|arg| arg.walk())
-        .filter(|arg| match arg.unpack() {
-            GenericArgKind::Type(_) | GenericArgKind::Const(_) => true,
-            GenericArgKind::Lifetime(_) => false,
-        })
-        .count();
-    debug!(" => type length={}", type_length);
-
-    // Rust code can easily create exponentially-long types using only a
-    // polynomial recursion depth. Even with the default recursion
-    // depth, you can easily get cases that take >2^60 steps to run,
-    // which means that rustc basically hangs.
-    //
-    // Bail out in these cases to avoid that bad user experience.
-    if !tcx.type_length_limit().value_within_limit(type_length) {
-        let (shrunk, written_to_path) = shrunk_instance_name(tcx, instance);
-        let msg = format!(
-            "reached the type-length limit while instantiating `{}`",
-            shrunk
-        );
-        let mut diag = tcx
-            .dcx()
-            .struct_span_fatal(tcx.def_span(instance.def_id()), msg);
-        if let Some(path) = written_to_path {
-            diag.note(format!(
-                "the full type name has been written to '{}'",
-                path.display()
-            ));
-        }
-        diag.help(format!(
-            "consider adding a `#![type_length_limit=\"{}\"]` attribute to your crate",
-            type_length
-        ));
-        diag.emit();
-    }
 }
 
 struct MirUsedCollector<'a, 'tcx> {
