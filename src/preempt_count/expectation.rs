@@ -372,7 +372,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 }
                 let adj = self.drop_adjustment(typing_env.as_query_input(boxed_ty))?;
 
-                let drop_trait = self.require_lang_item(LangItem::Drop, None);
+                let drop_trait = self.require_lang_item(LangItem::Drop, DUMMY_SP);
                 let drop_fn = self.associated_item_def_ids(drop_trait)[0];
                 let box_free = ty::Instance::try_resolve(
                     self.tcx,
@@ -470,7 +470,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         let span = MultiSpan::new();
 
         // Do not call `resolve_drop_in_place` because we need typing_env.
-        let drop_in_place = self.require_lang_item(LangItem::DropInPlace, None);
+        let drop_in_place = self.require_lang_item(LangItem::DropInPlace, DUMMY_SP);
         let args = self.mk_args(&[ty.into()]);
         let instance = ty::Instance::try_resolve(self.tcx, typing_env, drop_in_place, args)
             .unwrap()
@@ -685,7 +685,7 @@ memoize!(
 
             _ if let Some(boxed_ty) = ty.boxed_ty() => {
                 let exp = cx.drop_expectation(typing_env.as_query_input(boxed_ty))?;
-                let drop_trait = cx.require_lang_item(LangItem::Drop, None);
+                let drop_trait = cx.require_lang_item(LangItem::Drop, DUMMY_SP);
                 let drop_fn = cx.associated_item_def_ids(drop_trait)[0];
                 let box_free = ty::Instance::try_resolve(
                     cx.tcx,
@@ -822,7 +822,7 @@ memoize!(
         }
 
         // Do not call `resolve_drop_in_place` because we need typing_env.
-        let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
+        let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, DUMMY_SP);
         let args = cx.mk_args(&[ty.into()]);
         let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()
@@ -948,7 +948,7 @@ memoize!(
         }
 
         // Do not call `resolve_drop_in_place` because we need typing_env.
-        let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, None);
+        let drop_in_place = cx.require_lang_item(LangItem::DropInPlace, DUMMY_SP);
         let args = cx.mk_args(&[ty.into()]);
         let instance = ty::Instance::try_resolve(cx.tcx, typing_env, drop_in_place, args)
             .unwrap()

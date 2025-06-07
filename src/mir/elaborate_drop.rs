@@ -249,7 +249,7 @@ where
             // Resolving obj.<AsyncDrop::drop>()
             let trait_ref = ty::TraitRef::new(
                 tcx,
-                tcx.require_lang_item(LangItem::AsyncDrop, Some(span)),
+                tcx.require_lang_item(LangItem::AsyncDrop, span),
                 [drop_ty],
             );
             let (drop_trait, trait_args) = match tcx.codegen_select_candidate(
@@ -271,7 +271,7 @@ where
             (sig.output(), drop_fn_def_id, trait_args)
         } else {
             // Resolving async_drop_in_place<T> function for drop_ty
-            let drop_fn_def_id = tcx.require_lang_item(LangItem::AsyncDropInPlace, Some(span));
+            let drop_fn_def_id = tcx.require_lang_item(LangItem::AsyncDropInPlace, span);
             let trait_args = tcx.mk_args(&[drop_ty.into()]);
             let sig = tcx.fn_sig(drop_fn_def_id).instantiate(tcx, trait_args);
             let sig = tcx.instantiate_bound_regions_with_erased(sig);
@@ -300,7 +300,7 @@ where
         // pin_obj_place preparation
         let pin_obj_new_unchecked_fn = Ty::new_fn_def(
             tcx,
-            tcx.require_lang_item(LangItem::PinNewUnchecked, Some(span)),
+            tcx.require_lang_item(LangItem::PinNewUnchecked, span),
             [GenericArg::from(obj_ref_ty)],
         );
         let pin_obj_ty = pin_obj_new_unchecked_fn
@@ -954,7 +954,7 @@ where
     fn destructor_call_block_sync(&mut self, (succ, unwind): (BasicBlock, Unwind)) -> BasicBlock {
         debug!("destructor_call_block({:?}, {:?})", self, succ);
         let tcx = self.tcx();
-        let drop_trait = tcx.require_lang_item(LangItem::Drop, None);
+        let drop_trait = tcx.require_lang_item(LangItem::Drop, DUMMY_SP);
         let drop_fn = tcx.associated_item_def_ids(drop_trait)[0];
         let ty = self.place_ty(self.place);
 

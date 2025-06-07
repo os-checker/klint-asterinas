@@ -44,7 +44,7 @@ fn custom_coerce_unsize_info<'tcx>(
 ) -> Result<CustomCoerceUnsized, ErrorGuaranteed> {
     let trait_ref = ty::TraitRef::new(
         tcx.tcx,
-        tcx.require_lang_item(LangItem::CoerceUnsized, Some(tcx.span)),
+        tcx.require_lang_item(LangItem::CoerceUnsized, tcx.span),
         [source_ty, target_ty],
     );
 
@@ -532,7 +532,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
 
         let tcx = self.tcx;
         let push_mono_lang_item = |this: &mut Self, lang_item: LangItem| {
-            let instance = Instance::mono(tcx, tcx.require_lang_item(lang_item, Some(source)));
+            let instance = Instance::mono(tcx, tcx.require_lang_item(lang_item, source));
             this.output.push(create_fn_mono_item(tcx, instance, source));
         };
 
@@ -994,7 +994,7 @@ impl<'v> RootCollector<'_, 'v> {
             return;
         };
 
-        let start_def_id = self.tcx.require_lang_item(LangItem::Start, None);
+        let start_def_id = self.tcx.require_lang_item(LangItem::Start, DUMMY_SP);
         let main_ret_ty = self
             .tcx
             .fn_sig(main_def_id)
