@@ -89,6 +89,34 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             return Some(NO_ASSUMPTION);
         }
 
+        // Handle Rust mangled symbols.
+        if symbol.starts_with("_RN") {
+            return Some(match symbol {
+                // Memory allocations glues depended by liballoc.
+                // Allocation functions may sleep.
+                f if f.ends_with("__rust_alloc")
+                    || f.ends_with("__rust_alloc_zeroed")
+                    || f.ends_with("__rust_realloc") =>
+                {
+                    MIGHT_SLEEP
+                }
+
+                // Deallocation function will not sleep.
+                f if f.ends_with("__rust_dealloc") => USE_SPINLOCK,
+
+                // Interfacing between libcore and panic runtime
+                f if f.ends_with("rust_begin_unwind") => NO_ASSUMPTION,
+
+                // Just an unstable marker.
+                f if f.ends_with("__rust_no_alloc_shim_is_unstable_v2") => NO_ASSUMPTION,
+
+                _ => {
+                    warn!("Unable to determine property for FFI function `{}`", symbol);
+                    return None;
+                }
+            });
+        }
+
         // Skip helpers.
         if symbol.starts_with("rust_helper_") {
             symbol = &symbol["rust_helper_".len()..];
@@ -244,21 +272,6 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             // workqueue.h
             "__INIT_WORK_WITH_KEY" | "queue_work_on" => NO_ASSUMPTION,
             "destroy_workqueue" => MIGHT_SLEEP,
-
-            // Memory allocations glues depended by liballoc.
-            // Allocation functions may sleep.
-            f if f.ends_with("__rust_alloc")
-                || f.ends_with("__rust_alloc_zeroed")
-                || f.ends_with("__rust_realloc") =>
-            {
-                MIGHT_SLEEP
-            }
-
-            // Deallocation function will not sleep.
-            f if f.ends_with("__rust_dealloc") => USE_SPINLOCK,
-
-            // Interfacing between libcore and panic runtime
-            f if f.ends_with("rust_begin_unwind") => NO_ASSUMPTION,
 
             _ => {
                 warn!("Unable to determine property for FFI function `{}`", symbol);
