@@ -96,13 +96,13 @@ fn remap_mir_for_const_eval_select<'tcx>(
                             // there is no good way of extracting a tuple arg from a constant (const generic stuff)
                             // so we just create a temporary and deconstruct that.
                             let local = body.local_decls.push(LocalDecl::new(ty, fn_span));
-                            bb.statements.push(Statement {
-                                source_info: SourceInfo::outermost(fn_span),
-                                kind: StatementKind::Assign(Box::new((
+                            bb.statements.push(Statement::new(
+                                SourceInfo::outermost(fn_span),
+                                StatementKind::Assign(Box::new((
                                     local.into(),
                                     Rvalue::Use(tupled_args.node.clone()),
                                 ))),
-                            });
+                            ));
                             (Operand::Move, local.into())
                         }
                         Operand::Move(place) => (Operand::Move, place),

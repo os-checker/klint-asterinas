@@ -54,11 +54,10 @@ pub fn build_drop_shim<'tcx>(
     let return_block = BasicBlock::new(1);
     let mut blocks = IndexVec::with_capacity(2);
     let block = |blocks: &mut IndexVec<_, _>, kind| {
-        blocks.push(BasicBlockData {
-            statements: vec![],
-            terminator: Some(Terminator { source_info, kind }),
-            is_cleanup: false,
-        })
+        blocks.push(BasicBlockData::new(
+            Some(Terminator { source_info, kind }),
+            false,
+        ))
     };
     block(
         &mut blocks,
