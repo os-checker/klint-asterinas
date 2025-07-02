@@ -13,8 +13,8 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_session::StableCrateId;
 use rustc_span::def_id::{CrateNum, DefId, DefIndex};
 use rustc_span::{
-    BytePos, DUMMY_SP, SourceFile, Span, SpanDecoder, SpanEncoder, StableSourceFileId, Symbol,
-    SyntaxContext,
+    BytePos, ByteSymbol, DUMMY_SP, SourceFile, Span, SpanDecoder, SpanEncoder, StableSourceFileId,
+    Symbol, SyntaxContext,
 };
 
 // This is the last available version of `MemEncoder` in rustc_serialize::opaque before its removal.
@@ -185,6 +185,7 @@ impl<'a, 'tcx> Encoder for EncodeContext<'tcx> {
         emit_bool(bool);
         emit_char(char);
         emit_str(&str);
+        emit_byte_str(&[u8]);
         emit_raw_bytes(&[u8]);
     }
 }
@@ -254,6 +255,10 @@ impl<'tcx> SpanEncoder for EncodeContext<'tcx> {
 
     fn encode_symbol(&mut self, symbol: Symbol) {
         self.emit_str(symbol.as_str())
+    }
+
+    fn encode_byte_symbol(&mut self, symbol: ByteSymbol) {
+        self.emit_byte_str(symbol.as_byte_str())
     }
 
     fn encode_expn_id(&mut self, _expn_id: rustc_span::ExpnId) {
@@ -329,6 +334,7 @@ impl<'a, 'tcx> Decoder for DecodeContext<'a, 'tcx> {
         read_bool -> bool;
         read_char -> char;
         read_str -> &str;
+        read_byte_str -> &[u8];
     }
 
     fn read_raw_bytes(&mut self, len: usize) -> &[u8] {
@@ -435,6 +441,10 @@ impl<'a, 'tcx> SpanDecoder for DecodeContext<'a, 'tcx> {
 
     fn decode_symbol(&mut self) -> Symbol {
         Symbol::intern(self.read_str())
+    }
+
+    fn decode_byte_symbol(&mut self) -> ByteSymbol {
+        ByteSymbol::intern(self.read_byte_str())
     }
 
     fn decode_expn_id(&mut self) -> rustc_span::ExpnId {
