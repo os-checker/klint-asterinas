@@ -434,15 +434,14 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
             // have to instantiate all methods of the trait being cast to, so we
             // can build the appropriate vtable.
             mir::Rvalue::Cast(
-                mir::CastKind::PointerCoercion(PointerCoercion::Unsize, _)
-                | mir::CastKind::PointerCoercion(PointerCoercion::DynStar, _),
+                mir::CastKind::PointerCoercion(PointerCoercion::Unsize, _),
                 ref operand,
                 target_ty,
             ) => {
                 let target_ty = self.monomorphize(target_ty);
                 let source_ty = operand.ty(self.body, self.tcx);
                 let source_ty = self.monomorphize(source_ty);
-                let (source_ty, target_ty) = find_vtable_types_for_unsizing(
+                let (source_ty, target_ty) = find_tails_for_unsizing(
                     self.tcx.at(span),
                     ty::TypingEnv::fully_monomorphized(),
                     source_ty,
@@ -451,9 +450,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
                 // This could also be a different Unsize instruction, like
                 // from a fixed sized array to a slice. But we are only
                 // interested in things that produce a vtable.
-                if (target_ty.is_trait() && !source_ty.is_trait())
-                    || (target_ty.is_dyn_star() && !source_ty.is_dyn_star())
-                {
+                if target_ty.is_trait() && !source_ty.is_trait() {
                     create_mono_items_for_vtable_methods(
                         self.tcx,
                         target_ty,
@@ -760,52 +757,34 @@ pub fn should_codegen_locally<'tcx>(tcx: TyCtxt<'tcx>, instance: &Instance<'tcx>
 /// let target = src as &ComplexStruct<dyn SomeTrait>;
 /// ```
 ///
-/// Again, we want this `find_vtable_types_for_unsizing()` to provide the pair
+/// Again, we want this `find_tails_for_unsizing()` to provide the pair
 /// `(SomeStruct, SomeTrait)`.
 ///
 /// Finally, there is also the case of custom unsizing coercions, e.g., for
 /// smart pointers such as `Rc` and `Arc`.
-pub fn find_vtable_types_for_unsizing<'tcx>(
+pub fn find_tails_for_unsizing<'tcx>(
     tcx: TyCtxtAt<'tcx>,
     typing_env: ty::TypingEnv<'tcx>,
     source_ty: Ty<'tcx>,
     target_ty: Ty<'tcx>,
 ) -> (Ty<'tcx>, Ty<'tcx>) {
-    let ptr_vtable = |inner_source: Ty<'tcx>, inner_target: Ty<'tcx>| {
-        let type_has_metadata = |ty: Ty<'tcx>| -> bool {
-            if ty.is_sized(tcx.tcx, typing_env) {
-                return false;
-            }
-            let tail = tcx.struct_tail_for_codegen(ty, typing_env);
-            match tail.kind() {
-                ty::Foreign(..) => false,
-                ty::Str | ty::Slice(..) | ty::Dynamic(..) => true,
-                _ => bug!("unexpected unsized tail: {:?}", tail),
-            }
-        };
-        if type_has_metadata(inner_source) {
-            (inner_source, inner_target)
-        } else {
-            tcx.struct_lockstep_tails_for_codegen(inner_source, inner_target, typing_env)
-        }
-    };
-
     match (&source_ty.kind(), &target_ty.kind()) {
-        (&ty::Ref(_, a, _), &ty::Ref(_, b, _) | &ty::RawPtr(b, _))
-        | (&ty::RawPtr(a, _), &ty::RawPtr(b, _)) => ptr_vtable(*a, *b),
+        (
+            &ty::Ref(_, source_pointee, _),
+            &ty::Ref(_, target_pointee, _) | &ty::RawPtr(target_pointee, _),
+        )
+        | (&ty::RawPtr(source_pointee, _), &ty::RawPtr(target_pointee, _)) => {
+            tcx.struct_lockstep_tails_for_codegen(*source_pointee, *target_pointee, typing_env)
+        }
         (_, _)
             if let Some(source_boxed) = source_ty.boxed_ty()
                 && let Some(target_boxed) = target_ty.boxed_ty() =>
         {
-            ptr_vtable(source_boxed, target_boxed)
+            tcx.struct_lockstep_tails_for_codegen(source_boxed, target_boxed, typing_env)
         }
-
-        // T as dyn* Trait
-        (_, &ty::Dynamic(_, _, ty::DynStar)) => ptr_vtable(source_ty, target_ty),
 
         (&ty::Adt(source_adt_def, source_args), &ty::Adt(target_adt_def, target_args)) => {
             assert_eq!(source_adt_def, target_adt_def);
-
             let CustomCoerceUnsized::Struct(coerce_index) =
                 match custom_coerce_unsize_info(tcx, typing_env, source_ty, target_ty) {
                     Ok(ccu) => ccu,
@@ -814,24 +793,16 @@ pub fn find_vtable_types_for_unsizing<'tcx>(
                         return (e, e);
                     }
                 };
-
-            let source_fields = &source_adt_def.non_enum_variant().fields;
-            let target_fields = &target_adt_def.non_enum_variant().fields;
-
-            assert!(
-                coerce_index.index() < source_fields.len()
-                    && source_fields.len() == target_fields.len()
-            );
-
-            find_vtable_types_for_unsizing(
-                tcx,
-                typing_env,
-                source_fields[coerce_index].ty(*tcx, source_args),
-                target_fields[coerce_index].ty(*tcx, target_args),
-            )
+            let coerce_field = &source_adt_def.non_enum_variant().fields[coerce_index];
+            // We're getting a possibly unnormalized type, so normalize it.
+            let source_field =
+                tcx.normalize_erasing_regions(typing_env, coerce_field.ty(*tcx, source_args));
+            let target_field =
+                tcx.normalize_erasing_regions(typing_env, coerce_field.ty(*tcx, target_args));
+            find_tails_for_unsizing(tcx, typing_env, source_field, target_field)
         }
         _ => bug!(
-            "find_vtable_types_for_unsizing: invalid coercion {:?} -> {:?}",
+            "find_tails_for_unsizing: invalid coercion {:?} -> {:?}",
             source_ty,
             target_ty
         ),

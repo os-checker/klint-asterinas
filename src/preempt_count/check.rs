@@ -129,21 +129,19 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
 
         match *rvalue {
             mir::Rvalue::Cast(
-                mir::CastKind::PointerCoercion(PointerCoercion::Unsize, _)
-                | mir::CastKind::PointerCoercion(PointerCoercion::DynStar, _),
+                mir::CastKind::PointerCoercion(PointerCoercion::Unsize, _),
                 ref operand,
                 target_ty,
             ) => {
                 let target_ty = self.monomorphize(target_ty);
                 let source_ty = operand.ty(self.body, self.cx.tcx);
                 let source_ty = self.monomorphize(source_ty);
-                let (source_ty, target_ty) =
-                    crate::monomorphize_collector::find_vtable_types_for_unsizing(
-                        self.cx.tcx.at(span),
-                        self.typing_env,
-                        source_ty,
-                        target_ty,
-                    );
+                let (source_ty, target_ty) = crate::monomorphize_collector::find_tails_for_unsizing(
+                    self.cx.tcx.at(span),
+                    self.typing_env,
+                    source_ty,
+                    target_ty,
+                );
                 if let ty::Dynamic(trait_ty, ..) = target_ty.kind() {
                     if let ty::Dynamic(..) = source_ty.kind() {
                         // This is trait upcasting.
