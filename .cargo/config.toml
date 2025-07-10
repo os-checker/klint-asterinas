@@ -6,4 +6,4 @@
 RUSTC_BOOTSTRAP = "1"
 
 [build]
-rustflags = ["-Zlinker-features=-lld"]
+rustflags = ["-Clinker-features=-lld"]
