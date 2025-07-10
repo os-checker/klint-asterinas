@@ -4,8 +4,6 @@
 
 #![crate_type = "lib"]
 
-// This is a case that currently klint will return false positive.
-
 pub struct X;
 
 impl Drop for X {
@@ -16,6 +14,9 @@ impl Drop for X {
 
 #[klint::preempt_count(expect = 0..)]
 pub fn foo(x: Option<X>) -> Option<X> {
+    // This control flow only conditionally moved `x`, but it will need dropping anymore
+    // regardless if this branch is taken.
+    // It's important that we do not consider the destructor to possibly run at the end of scope.
     if let Some(x) = x {
         return Some(x);
     }
