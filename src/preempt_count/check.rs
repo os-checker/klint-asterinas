@@ -216,6 +216,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
             GlobalAlloc::VTable(ty, dyn_ty) => {
                 self.check_vtable_construction(ty, dyn_ty.principal(), span)?;
             }
+            GlobalAlloc::TypeId { .. } => {}
         }
 
         Ok(())

@@ -1089,6 +1089,7 @@ fn collect_alloc<'tcx>(
             ));
             collect_alloc(tcx, alloc_id, output)
         }
+        GlobalAlloc::TypeId { .. } => {}
     }
 }
 
