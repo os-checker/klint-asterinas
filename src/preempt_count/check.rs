@@ -227,15 +227,8 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
             mir::ConstValue::Scalar(Scalar::Ptr(ptr, _size)) => {
                 self.check_alloc(ptr.provenance.alloc_id(), span)?;
             }
-            mir::ConstValue::Indirect { alloc_id, .. } => self.check_alloc(alloc_id, span)?,
-            mir::ConstValue::Slice {
-                data: alloc,
-                meta: _,
-            } => {
-                for prov in alloc.inner().provenance().provenances() {
-                    self.check_alloc(prov.alloc_id(), span)?;
-                }
-            }
+            mir::ConstValue::Indirect { alloc_id, .. }
+            | mir::ConstValue::Slice { alloc_id, meta: _ } => self.check_alloc(alloc_id, span)?,
             _ => {}
         }
         Ok(())

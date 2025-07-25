@@ -1111,22 +1111,15 @@ fn collect_used_items<'tcx>(
 
 fn collect_const_value<'tcx>(
     tcx: TyCtxt<'tcx>,
-    value: mir::ConstValue<'tcx>,
+    value: mir::ConstValue,
     output: &mut Vec<Spanned<MonoItem<'tcx>>>,
 ) {
     match value {
         mir::ConstValue::Scalar(Scalar::Ptr(ptr, _size)) => {
             collect_alloc(tcx, ptr.provenance.alloc_id(), output)
         }
-        mir::ConstValue::Indirect { alloc_id, .. } => collect_alloc(tcx, alloc_id, output),
-        mir::ConstValue::Slice {
-            data: alloc,
-            meta: _,
-        } => {
-            for prov in alloc.inner().provenance().provenances() {
-                collect_alloc(tcx, prov.alloc_id(), output);
-            }
-        }
+        mir::ConstValue::Indirect { alloc_id, .. }
+        | mir::ConstValue::Slice { alloc_id, meta: _ } => collect_alloc(tcx, alloc_id, output),
         _ => {}
     }
 }
