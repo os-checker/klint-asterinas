@@ -27,7 +27,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     fn core_out_of_band_annotation(&self, def_id: DefId) -> PreemptionCount {
         if self.def_kind(def_id) == DefKind::AssocFn
-            && let Some(impl_) = self.impl_of_method(def_id)
+            && let Some(impl_) = self.impl_of_assoc(def_id)
         {
             let self_ty = self.type_of(impl_);
             let Some(fn_name) = self.def_path(def_id).data.last().copied() else {

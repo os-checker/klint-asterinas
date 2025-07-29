@@ -546,7 +546,7 @@ memoize!(
                     cx.instance_check(poly_instance)?;
 
                     // Find the `DefId` of the trait method.
-                    let trait_item = if let Some(impl_) = cx.impl_of_method(instance.def_id()) {
+                    let trait_item = if let Some(impl_) = cx.impl_of_assoc(instance.def_id()) {
                         cx.associated_items(impl_)
                             .in_definition_order()
                             .find(|x| x.def_id == instance.def_id())
@@ -554,7 +554,7 @@ memoize!(
                             .trait_item_def_id
                             .unwrap()
                     } else {
-                        // `impl_of_method` returns `None` if this instance is from the default impl of a trait method.
+                        // `impl_of_assoc` returns `None` if this instance is from the default impl of a trait method.
                         instance.def_id()
                     };
 
