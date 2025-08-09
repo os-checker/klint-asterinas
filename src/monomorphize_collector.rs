@@ -22,7 +22,7 @@ use rustc_middle::mir::visit::Visitor as MirVisitor;
 use rustc_middle::mir::{self, Local, Location};
 use rustc_middle::query::TyCtxtAt;
 use rustc_middle::ty::adjustment::{CustomCoerceUnsized, PointerCoercion};
-use rustc_middle::ty::print::{shrunk_instance_name, with_no_trimmed_paths};
+use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_middle::ty::{
     self, GenericArgs, GenericParamDefKind, Instance, Ty, TyCtxt, TypeFoldable, TypeVisitableExt,
     VtblEntry,
@@ -34,6 +34,18 @@ use rustc_span::source_map::{Spanned, dummy_spanned, respan};
 use rustc_span::{DUMMY_SP, ErrorGuaranteed, Span};
 use rustc_trait_selection::traits;
 use std::ops::Range;
+
+// From rustc_monomorphize/errors.rs
+#[derive(Diagnostic)]
+#[diag(klint_monomorphize_recursion_limit)]
+struct RecursionLimit<'tcx> {
+    #[primary_span]
+    pub span: Span,
+    pub instance: Instance<'tcx>,
+    #[note]
+    pub def_span: Span,
+    pub def_path_str: String,
+}
 
 // From rustc_monomorphize/lib.rs
 fn custom_coerce_unsize_info<'tcx>(
@@ -381,20 +393,12 @@ fn check_recursion_limit<'tcx>(
     if !recursion_limit.value_within_limit(adjusted_recursion_depth) {
         let def_span = tcx.def_span(def_id);
         let def_path_str = tcx.def_path_str(def_id);
-        let (shrunk, written_to_path) = shrunk_instance_name(tcx, instance);
-        let error = format!(
-            "reached the recursion limit while instantiating `{}`",
-            shrunk
-        );
-        let mut err = tcx.dcx().struct_span_fatal(span, error);
-        err.span_note(def_span, format!("`{}` defined here", def_path_str));
-        if let Some(path) = written_to_path {
-            err.note(format!(
-                "the full type name has been written to '{}'",
-                path.display()
-            ));
-        }
-        err.emit();
+        tcx.dcx().emit_fatal(RecursionLimit {
+            span,
+            instance,
+            def_span,
+            def_path_str,
+        });
     }
 
     recursion_depths.insert(def_id, recursion_depth + 1);

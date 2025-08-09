@@ -12,6 +12,7 @@ extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;
+extern crate rustc_fluent_macro;
 extern crate rustc_hir;
 extern crate rustc_index;
 extern crate rustc_infer;
@@ -106,3 +107,5 @@ fn main() {
 
     rustc_driver::run_compiler(&args, &mut MyCallbacks);
 }
+
+rustc_fluent_macro::fluent_messages! { "./messages.ftl" }
