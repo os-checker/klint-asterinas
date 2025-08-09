@@ -19,6 +19,7 @@ use crate::ctxt::AnalysisCtxt;
 use crate::lattice::MeetSemiLattice;
 
 impl<'tcx> AnalysisCtxt<'tcx> {
+    /// Query the preemption count expectation range of a certain `terminator` invocation.
     pub fn terminator_expectation(
         &self,
         typing_env: TypingEnv<'tcx>,
@@ -520,58 +521,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 continue;
             }
 
-            let expectation = match &data.terminator().kind {
-                TerminatorKind::Call { func, .. } => {
-                    let callee_ty = func.ty(body, self.tcx);
-                    let callee_ty = instance.instantiate_mir_and_normalize_erasing_regions(
-                        self.tcx,
-                        typing_env,
-                        ty::EarlyBinder::bind(callee_ty),
-                    );
-                    if let ty::FnDef(def_id, args) = *callee_ty.kind() {
-                        if let Some(v) = self.preemption_count_annotation(def_id).expectation {
-                            // Fast path, no need to resolve the instance.
-                            // This also avoids `TooGeneric` when def_id is an trait method.
-                            v
-                        } else {
-                            let callee_instance =
-                                ty::Instance::try_resolve(self.tcx, typing_env, def_id, args)
-                                    .unwrap()
-                                    .ok_or(Error::TooGeneric)?;
-                            self.call_stack.borrow_mut().push(UseSite {
-                                instance: typing_env.as_query_input(instance),
-                                kind: UseSiteKind::Call(data.terminator().source_info.span),
-                            });
-                            let result = self
-                                .instance_expectation(typing_env.as_query_input(callee_instance));
-                            self.call_stack.borrow_mut().pop();
-                            result?
-                        }
-                    } else {
-                        crate::atomic_context::INDIRECT_DEFAULT.1
-                    }
-                }
-                TerminatorKind::Drop { place, .. } => {
-                    let ty = place.ty(body, self.tcx).ty;
-                    let ty = instance.instantiate_mir_and_normalize_erasing_regions(
-                        self.tcx,
-                        typing_env,
-                        ty::EarlyBinder::bind(ty),
-                    );
-
-                    self.call_stack.borrow_mut().push(UseSite {
-                        instance: typing_env.as_query_input(instance),
-                        kind: UseSiteKind::Drop {
-                            drop_span: data.terminator().source_info.span,
-                            place_span: body.local_decls[place.local].source_info.span,
-                        },
-                    });
-                    let result = self.drop_expectation(typing_env.as_query_input(ty));
-                    self.call_stack.borrow_mut().pop();
-                    result?
-                }
-                _ => continue,
-            };
+            let expectation =
+                self.terminator_expectation(typing_env, instance, body, data.terminator())?;
 
             // Special case for no expectation at all. No need to check adjustment here.
             if expectation == ExpectationRange::top() {
