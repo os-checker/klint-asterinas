@@ -22,7 +22,6 @@ use rustc_middle::mir::visit::Visitor as MirVisitor;
 use rustc_middle::mir::{self, Local, Location};
 use rustc_middle::query::TyCtxtAt;
 use rustc_middle::ty::adjustment::{CustomCoerceUnsized, PointerCoercion};
-use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_middle::ty::{
     self, GenericArgs, GenericParamDefKind, Instance, Ty, TyCtxt, TypeFoldable, TypeVisitableExt,
     VtblEntry,
@@ -36,6 +35,22 @@ use rustc_trait_selection::traits;
 use std::ops::Range;
 
 // From rustc_monomorphize/errors.rs
+#[derive(Diagnostic)]
+#[diag(klint_monomorphize_encountered_error_while_instantiating)]
+struct EncounteredErrorWhileInstantiating<'tcx> {
+    #[primary_span]
+    pub span: Span,
+    pub kind: &'static str,
+    pub instance: Instance<'tcx>,
+}
+
+#[derive(Diagnostic)]
+#[diag(klint_monomorphize_encountered_error_while_instantiating_global_asm)]
+struct EncounteredErrorWhileInstantiatingGlobalAsm {
+    #[primary_span]
+    pub span: Span,
+}
+
 #[derive(Diagnostic)]
 #[diag(klint_monomorphize_recursion_limit)]
 struct RecursionLimit<'tcx> {
@@ -328,14 +343,24 @@ fn collect_items_rec<'tcx>(
         && starting_item.node.is_generic_fn()
         && starting_item.node.is_user_defined()
     {
-        let formatted_item = with_no_trimmed_paths!(starting_item.node.to_string());
-        tcx.dcx().span_note(
-            starting_item.span,
-            format!(
-                "the above error was encountered while instantiating `{}`",
-                formatted_item
-            ),
-        );
+        match starting_item.node {
+            MonoItem::Fn(instance) => tcx.dcx().emit_note(EncounteredErrorWhileInstantiating {
+                span: starting_item.span,
+                kind: "fn",
+                instance,
+            }),
+            MonoItem::Static(def_id) => tcx.dcx().emit_note(EncounteredErrorWhileInstantiating {
+                span: starting_item.span,
+                kind: "static",
+                instance: Instance::new_raw(def_id, GenericArgs::empty()),
+            }),
+            MonoItem::GlobalAsm(_) => {
+                tcx.dcx()
+                    .emit_note(EncounteredErrorWhileInstantiatingGlobalAsm {
+                        span: starting_item.span,
+                    })
+            }
+        }
     }
 
     usage_map
