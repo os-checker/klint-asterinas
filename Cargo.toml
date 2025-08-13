@@ -9,7 +9,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-rusqlite = "0.32"
+rusqlite = "0.37"
 home = "0.5"
 
 [dev-dependencies]
