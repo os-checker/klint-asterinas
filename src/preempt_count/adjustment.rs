@@ -14,7 +14,7 @@ use rustc_mir_dataflow::JoinSemiLattice;
 use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::TyCtxtInferExt;
 
-use super::dataflow::{AdjustmentBoundsOrError, AdjustmentComputation};
+use super::dataflow::{AdjustmentComputation, MaybeError};
 use super::{Error, PolyDisplay, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
 
@@ -299,7 +299,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         .iterate_to_fixpoint(self.tcx, body, None)
         .into_results_cursor(body);
 
-        let mut adjustment = AdjustmentBoundsOrError::default();
+        let mut adjustment = MaybeError::default();
         for (b, data) in rustc_middle::mir::traversal::reachable(body) {
             match data.terminator().kind {
                 TerminatorKind::Return => {

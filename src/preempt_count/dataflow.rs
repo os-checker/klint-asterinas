@@ -142,50 +142,75 @@ impl JoinSemiLattice for AdjustmentBounds {
     }
 }
 
-/// Bounds of adjustments or error.
+/// A result type that can be used as lattice.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AdjustmentBoundsOrError {
-    Bounds(AdjustmentBounds),
-    Error(Error),
+pub enum MaybeError<T, E> {
+    Ok(T),
+    Err(E),
 }
 
-impl AdjustmentBoundsOrError {
-    #[track_caller]
-    pub fn unwrap(self) -> AdjustmentBounds {
-        match self {
-            AdjustmentBoundsOrError::Bounds(b) => b,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn into_result(self) -> Result<AdjustmentBounds, Error> {
-        match self {
-            AdjustmentBoundsOrError::Bounds(b) => Ok(b),
-            AdjustmentBoundsOrError::Error(e) => Err(e),
-        }
-    }
-}
-
-impl Default for AdjustmentBoundsOrError {
+impl<T: Default, E> Default for MaybeError<T, E> {
     fn default() -> Self {
-        Self::Bounds(Default::default())
+        Self::Ok(Default::default())
     }
 }
 
-impl JoinSemiLattice for AdjustmentBoundsOrError {
+impl<T, E> From<Result<T, E>> for MaybeError<T, E> {
+    #[inline]
+    fn from(value: Result<T, E>) -> Self {
+        match value {
+            Ok(v) => Self::Ok(v),
+            Err(e) => Self::Err(e),
+        }
+    }
+}
+
+impl<T, E> From<MaybeError<T, E>> for Result<T, E> {
+    #[inline]
+    fn from(value: MaybeError<T, E>) -> Self {
+        match value {
+            MaybeError::Ok(v) => Ok(v),
+            MaybeError::Err(e) => Err(e),
+        }
+    }
+}
+
+impl<T, E> MaybeError<T, E> {
+    #[inline]
+    pub fn from_result(result: Result<T, E>) -> Self {
+        result.into()
+    }
+
+    #[inline]
+    pub fn into_result(self) -> Result<T, E> {
+        self.into()
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn unwrap(self) -> T
+    where
+        E: std::fmt::Debug,
+    {
+        self.into_result().unwrap()
+    }
+}
+
+// The error type is hard coded to `Error` because we need special treatment w.r.t. `TooGeneric`.
+impl<T: JoinSemiLattice> JoinSemiLattice for MaybeError<T, Error> {
     fn join(&mut self, other: &Self) -> bool {
         match (self, other) {
-            (AdjustmentBoundsOrError::Error(Error::Error(_)), _) => false,
-            (this, AdjustmentBoundsOrError::Error(Error::Error(e))) => {
-                *this = AdjustmentBoundsOrError::Error(Error::Error(*e));
+            (Self::Err(Error::Error(_)), _) => false,
+            (this, Self::Err(Error::Error(e))) => {
+                *this = Self::Err(Error::Error(*e));
                 true
             }
-            (AdjustmentBoundsOrError::Error(Error::TooGeneric), _) => false,
-            (this, AdjustmentBoundsOrError::Error(Error::TooGeneric)) => {
-                *this = AdjustmentBoundsOrError::Error(Error::TooGeneric);
+            (Self::Err(Error::TooGeneric), _) => false,
+            (this, Self::Err(Error::TooGeneric)) => {
+                *this = Self::Err(Error::TooGeneric);
                 true
             }
-            (AdjustmentBoundsOrError::Bounds(a), AdjustmentBoundsOrError::Bounds(b)) => a.join(b),
+            (Self::Ok(a), Self::Ok(b)) => a.join(b),
         }
     }
 }
@@ -197,11 +222,11 @@ pub struct AdjustmentComputation<'mir, 'tcx, 'checker> {
     pub instance: Instance<'tcx>,
 }
 
-impl DebugWithContext<AdjustmentComputation<'_, '_, '_>> for AdjustmentBoundsOrError {}
+impl DebugWithContext<AdjustmentComputation<'_, '_, '_>> for MaybeError<AdjustmentBounds, Error> {}
 
 impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     // The number here indicates the offset in relation to the function's entry point.
-    type Domain = AdjustmentBoundsOrError;
+    type Domain = MaybeError<AdjustmentBounds, Error>;
 
     const NAME: &'static str = "atomic context";
 
@@ -210,7 +235,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
-        *state = AdjustmentBoundsOrError::Bounds(AdjustmentBounds {
+        *state = MaybeError::Ok(AdjustmentBounds {
             lo: Some(0),
             hi: Some(1),
         });
@@ -235,7 +260,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
             return terminator.edges();
         }
 
-        let AdjustmentBoundsOrError::Bounds(bounds) = state else {
+        let MaybeError::Ok(bounds) = state else {
             return terminator.edges();
         };
 
@@ -307,7 +332,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
             Ok(v) => v,
             Err(e) => {
                 // Too generic, need to bail out and retry after monomorphization.
-                *state = AdjustmentBoundsOrError::Error(e);
+                *state = MaybeError::Err(e);
                 return terminator.edges();
             }
         };
