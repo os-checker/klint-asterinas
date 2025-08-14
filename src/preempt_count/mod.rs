@@ -10,9 +10,9 @@ pub mod expectation;
 
 use rustc_errors::ErrorGuaranteed;
 use rustc_middle::ty::{Instance, PseudoCanonicalInput};
+use rustc_mir_dataflow::lattice::FlatSet;
 use rustc_span::Span;
 
-use self::dataflow::AdjustmentBounds;
 use crate::lattice::MeetSemiLattice;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Encodable, Decodable)]
@@ -150,37 +150,26 @@ impl std::ops::Sub<i32> for ExpectationRange {
     }
 }
 
-impl std::ops::Add<AdjustmentBounds> for ExpectationRange {
+impl std::ops::Add<FlatSet<i32>> for ExpectationRange {
     type Output = Self;
 
-    fn add(self, rhs: AdjustmentBounds) -> Self::Output {
-        Self {
-            lo: match rhs.lo {
-                None => 0,
-                Some(bound) => saturating_add(self.lo, bound),
-            },
-            hi: self
-                .hi
-                .zip(rhs.hi)
-                .map(|(hi, bound)| saturating_add(hi, bound - 1)),
+    fn add(self, rhs: FlatSet<i32>) -> Self::Output {
+        match rhs {
+            FlatSet::Bottom => self,
+            FlatSet::Elem(v) => self + v,
+            FlatSet::Top => Self::top(),
         }
     }
 }
 
-impl std::ops::Sub<AdjustmentBounds> for ExpectationRange {
+impl std::ops::Sub<FlatSet<i32>> for ExpectationRange {
     type Output = Self;
 
-    fn sub(self, rhs: AdjustmentBounds) -> Self::Output {
-        Self {
-            lo: match rhs.lo {
-                None => 0,
-                Some(bound) => saturating_add(self.lo, -bound),
-            },
-            hi: match (self.hi, rhs.hi) {
-                (None, _) => None,
-                (_, None) => Some(0),
-                (Some(hi), Some(bound)) => Some(saturating_add(hi, 1 - bound)),
-            },
+    fn sub(self, rhs: FlatSet<i32>) -> Self::Output {
+        match rhs {
+            FlatSet::Bottom => self,
+            FlatSet::Elem(v) => self - v,
+            FlatSet::Top => Self { lo: 0, hi: Some(0) },
         }
     }
 }

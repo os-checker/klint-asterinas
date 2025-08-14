@@ -11,6 +11,7 @@ use rustc_middle::ty::{
 };
 use rustc_mir_dataflow::Analysis;
 use rustc_mir_dataflow::JoinSemiLattice;
+use rustc_mir_dataflow::lattice::FlatSet;
 use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::TyCtxtInferExt;
 
@@ -138,7 +139,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             results.seek_to_block_start(b);
             // We can unwrap here because if this function is called, we know that no paths to `Return`
             // can contain `TooGeneric` or `Error` otherwise we would have returned early (in caller).
-            if results.get().unwrap().is_single_value().is_some() {
+            if matches!(results.get().unwrap(), FlatSet::Elem(_)) {
                 continue;
             }
 
@@ -155,7 +156,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             ));
         };
 
-        // Find the deepest single-value block in the dominator tree.
+        // Find the deepest block in the dominator tree with good value on block start.
         let mut first_problematic_block = return_bb;
         let dominators = body.basic_blocks.dominators();
         loop {
@@ -163,12 +164,12 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 .immediate_dominator(first_problematic_block)
                 .expect("block not reachable!");
             if b == first_problematic_block {
-                // Shouldn't actually happen because the entry block should always have a single value.
+                // Shouldn't actually happen because the entry block should always be good.
                 break;
             }
 
             results.seek_to_block_start(b);
-            if results.get().unwrap().is_single_value().is_some() {
+            if matches!(results.get().unwrap(), FlatSet::Elem(_)) {
                 break;
             }
             first_problematic_block = b;
@@ -247,17 +248,16 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 _ => terminator.source_info.span,
             };
 
-            let mut msg = match start_adjustment.is_single_value() {
-                None => {
+            let mut msg = match (start_adjustment, end_adjustment) {
+                (FlatSet::Bottom, _) | (_, FlatSet::Bottom) => unreachable!(),
+                (FlatSet::Top, _) => {
                     format!(
                         "preemption count adjustment is changed in the previous iteration of the loop"
                     )
                 }
-                Some(_) => {
-                    format!(
-                        "preemption count adjustment is {:?} after this",
-                        end_adjustment
-                    )
+                (_, FlatSet::Top) => unreachable!(),
+                (_, FlatSet::Elem(elem)) => {
+                    format!("preemption count adjustment is {} after this", elem)
                 }
             };
 
@@ -299,7 +299,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         .iterate_to_fixpoint(self.tcx, body, None)
         .into_results_cursor(body);
 
-        let mut adjustment = MaybeError::default();
+        let mut adjustment = MaybeError::Ok(FlatSet::Bottom);
         for (b, data) in rustc_middle::mir::traversal::reachable(body) {
             match data.terminator().kind {
                 TerminatorKind::Return => {
@@ -311,17 +311,19 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
         let adjustment = adjustment.into_result()?;
 
-        let adjustment = if adjustment.is_empty() {
-            // Diverging function, any value is fine, use the default 0.
-            0
-        } else if let Some(v) = adjustment.is_single_value() {
-            v
-        } else {
-            return Err(Error::Error(self.report_adjustment_infer_error(
-                instance,
-                body,
-                &mut analysis_result,
-            )));
+        let adjustment = match adjustment {
+            FlatSet::Bottom => {
+                // Diverging function, any value is fine, use the default 0.
+                0
+            }
+            FlatSet::Elem(v) => v,
+            FlatSet::Top => {
+                return Err(Error::Error(self.report_adjustment_infer_error(
+                    instance,
+                    body,
+                    &mut analysis_result,
+                )));
+            }
         };
 
         Ok(adjustment)

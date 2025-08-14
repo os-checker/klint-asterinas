@@ -5,142 +5,11 @@
 use rustc_middle::mir::{BasicBlock, Body, TerminatorEdges, TerminatorKind};
 use rustc_middle::ty::{self, Instance, TypingEnv};
 use rustc_mir_dataflow::JoinSemiLattice;
+use rustc_mir_dataflow::lattice::FlatSet;
 use rustc_mir_dataflow::{Analysis, fmt::DebugWithContext};
 
 use super::{Error, UseSite, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
-
-/// Bounds of adjustments.
-///
-/// Note that the semilattice join operation is not a normal range join. If we encounter code like this
-/// ```ignore
-/// while foo() {
-///    enter_atomic();
-/// }
-/// ```
-/// then the bounds will be `0..inf`, and the dataflow analysis will never converge because we are changing
-/// the upper bound one at a time.
-///
-/// To ensure convergence, we does not use `max(a.hi, b.hi)` when joining `a` and `b`. But instead,
-/// if `a.hi` and `b.hi` are different but both positive, we immediately relax the bound to unbounded.
-/// Similar relaxing is performed when `a.lo` and `b.lo` are different but both negative.
-/// We still do normal max/min otherwise, e.g. joining `1..5` and `2..5` gives `1..5`, because usually
-/// the preemption count adjustment is close to zero.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct AdjustmentBounds {
-    /// Lower bound of the adjustment, inclusive.
-    pub lo: Option<i32>,
-    /// Upper bound of the adjustment, exclusive.
-    pub hi: Option<i32>,
-}
-
-impl AdjustmentBounds {
-    pub fn is_empty(&self) -> bool {
-        self.lo == Some(0) && self.hi == Some(0)
-    }
-
-    pub fn unbounded() -> Self {
-        AdjustmentBounds { lo: None, hi: None }
-    }
-
-    pub fn offset(&self, offset: i32) -> Self {
-        AdjustmentBounds {
-            lo: self.lo.map(|x| x + offset),
-            hi: self.hi.map(|x| x + offset),
-        }
-    }
-
-    pub fn is_single_value(&self) -> Option<i32> {
-        match *self {
-            AdjustmentBounds {
-                lo: Some(x),
-                hi: Some(y),
-            } if x + 1 == y => Some(x),
-            _ => None,
-        }
-    }
-
-    pub fn single_value(v: i32) -> Self {
-        Self {
-            lo: Some(v),
-            hi: Some(v + 1),
-        }
-    }
-}
-
-impl Default for AdjustmentBounds {
-    fn default() -> Self {
-        Self {
-            lo: Some(0),
-            hi: Some(0),
-        }
-    }
-}
-
-impl std::fmt::Debug for AdjustmentBounds {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self.lo, self.hi) {
-            (Some(x), Some(y)) if x + 1 == y => write!(f, "{}", x),
-            (Some(x), Some(y)) => write!(f, "{}..{}", x, y),
-            (Some(x), None) => write!(f, "{}..", x),
-            (None, Some(y)) => write!(f, "..{}", y),
-            (None, None) => write!(f, ".."),
-        }
-    }
-}
-
-impl JoinSemiLattice for AdjustmentBounds {
-    fn join(&mut self, other: &Self) -> bool {
-        if other.is_empty() {
-            return false;
-        }
-
-        if self.is_empty() {
-            *self = *other;
-            return true;
-        }
-
-        let mut changed = false;
-        match (self.lo, other.lo) {
-            // Already unbounded, no change needed
-            (None, _) => (),
-            // Same bound, no change needed
-            (Some(a), Some(b)) if a == b => (),
-            // Both bounded, but with different bounds (and both negative). To ensure convergence, relax to unbounded.
-            (Some(a), Some(b)) if a < 0 && b < 0 => {
-                self.lo = None;
-                changed = true;
-            }
-            // Already have lower bound
-            (Some(a), Some(b)) if a < b => (),
-            // Adjust bound
-            _ => {
-                self.lo = other.lo;
-                changed = true;
-            }
-        }
-
-        match (self.hi, other.hi) {
-            // Already unbounded, no change needed
-            (None, _) => (),
-            // Same bound, no change needed
-            (Some(a), Some(b)) if a == b => (),
-            // Both bounded, but with different bounds (and both positive). To ensure convergence, relax to unbounded.
-            (Some(a), Some(b)) if a > 0 && b > 0 => {
-                self.hi = None;
-                changed = true;
-            }
-            // Already have upper bound
-            (Some(a), Some(b)) if a > b => (),
-            // Adjust bound
-            _ => {
-                self.hi = other.hi;
-                changed = true;
-            }
-        }
-        changed
-    }
-}
 
 /// A result type that can be used as lattice.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -222,23 +91,20 @@ pub struct AdjustmentComputation<'mir, 'tcx, 'checker> {
     pub instance: Instance<'tcx>,
 }
 
-impl DebugWithContext<AdjustmentComputation<'_, '_, '_>> for MaybeError<AdjustmentBounds, Error> {}
+impl DebugWithContext<AdjustmentComputation<'_, '_, '_>> for MaybeError<FlatSet<i32>, Error> {}
 
 impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     // The number here indicates the offset in relation to the function's entry point.
-    type Domain = MaybeError<AdjustmentBounds, Error>;
+    type Domain = MaybeError<FlatSet<i32>, Error>;
 
     const NAME: &'static str = "atomic context";
 
     fn bottom_value(&self, _body: &Body<'tcx>) -> Self::Domain {
-        Default::default()
+        MaybeError::Ok(FlatSet::Bottom)
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
-        *state = MaybeError::Ok(AdjustmentBounds {
-            lo: Some(0),
-            hi: Some(1),
-        });
+        *state = MaybeError::Ok(FlatSet::Elem(0));
     }
 
     fn apply_primary_statement_effect(
@@ -337,7 +203,11 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
             }
         };
 
-        *bounds = bounds.offset(adjustment);
+        *bounds = match *bounds {
+            FlatSet::Bottom => unreachable!(),
+            FlatSet::Elem(v) => FlatSet::Elem(v + adjustment),
+            FlatSet::Top => FlatSet::Top,
+        };
         terminator.edges()
     }
 
