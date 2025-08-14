@@ -14,7 +14,7 @@ use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::TyCtxtInferExt;
 
 use super::dataflow::AdjustmentComputation;
-use super::{AdjustmentBounds, Error, ExpectationRange, PolyDisplay, UseSite, UseSiteKind};
+use super::{Error, ExpectationRange, PolyDisplay, UseSite, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
 use crate::lattice::MeetSemiLattice;
 
@@ -386,7 +386,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 return self.report_instance_expectation_error(
                     typing_env,
                     box_free,
-                    expected + AdjustmentBounds::single_value(adj),
+                    expected + adj,
                     span,
                     diag,
                 );
@@ -442,11 +442,10 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 let Some(last_adj) = (size - 1).checked_mul(elem_adj) else {
                     return Ok(());
                 };
-                let last_adj_bound = AdjustmentBounds::single_value(last_adj);
                 return self.report_drop_expectation_error(
                     typing_env,
                     *elem_ty,
-                    expected + last_adj_bound,
+                    expected + last_adj,
                     span,
                     diag,
                 );
@@ -654,9 +653,8 @@ memoize!(
                 }
 
                 let adj = cx.drop_adjustment(typing_env.as_query_input(boxed_ty))?;
-                let adj_bound = AdjustmentBounds::single_value(adj);
 
-                let mut expected = box_free_exp - adj_bound;
+                let mut expected = box_free_exp - adj;
                 expected.meet(&exp);
                 if expected.is_empty() {
                     let mut diag = cx.dcx().struct_err(format!(
@@ -665,7 +663,7 @@ memoize!(
                     ));
                     diag.note(format!(
                         "but the possible preemption count after dropping the content is {}",
-                        exp + adj_bound
+                        exp + adj
                     ));
                     diag.note(format!("content being dropped is `{}`", boxed_ty));
                     return Err(Error::Error(cx.emit_with_use_site_info(diag)));
@@ -743,9 +741,7 @@ memoize!(
                     return Ok(ExpectationRange::top());
                 };
 
-                let last_adj_bound = AdjustmentBounds::single_value(last_adj);
-
-                let mut expected = elem_exp - last_adj_bound;
+                let mut expected = elem_exp - last_adj;
                 expected.meet(&elem_exp);
                 if expected.is_empty() {
                     let mut diag = cx.dcx().struct_err(format!(
@@ -754,7 +750,7 @@ memoize!(
                     ));
                     diag.note(format!(
                         "but the possible preemption count when dropping the last element is {}",
-                        elem_exp + last_adj_bound
+                        elem_exp + last_adj
                     ));
                     diag.note(format!("array being dropped is `{}`", ty));
                     return Err(Error::Error(cx.emit_with_use_site_info(diag)));

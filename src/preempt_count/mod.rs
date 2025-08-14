@@ -128,6 +128,28 @@ fn saturating_add(x: u32, y: i32) -> u32 {
     }
 }
 
+impl std::ops::Add<i32> for ExpectationRange {
+    type Output = Self;
+
+    fn add(self, rhs: i32) -> Self::Output {
+        Self {
+            lo: saturating_add(self.lo, rhs),
+            hi: self.hi.map(|hi| saturating_add(hi, rhs)),
+        }
+    }
+}
+
+impl std::ops::Sub<i32> for ExpectationRange {
+    type Output = Self;
+
+    fn sub(self, rhs: i32) -> Self::Output {
+        Self {
+            lo: saturating_add(self.lo, -rhs),
+            hi: self.hi.map(|hi| saturating_add(hi, -rhs)),
+        }
+    }
+}
+
 impl std::ops::Add<AdjustmentBounds> for ExpectationRange {
     type Output = Self;
 
