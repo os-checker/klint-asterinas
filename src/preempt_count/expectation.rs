@@ -1231,7 +1231,7 @@ memoize!(
         // Verify that the inferred result is compatible with the FFI list.
         if cx
             .codegen_fn_attrs(instance.def_id())
-            .contains_extern_indicator(cx.tcx, instance.def_id())
+            .contains_extern_indicator()
         {
             // Verify that the inferred result is compatible with the FFI list.
             let ffi_property = cx
