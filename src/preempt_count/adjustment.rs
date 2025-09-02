@@ -279,15 +279,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         body: &Body<'tcx>,
     ) -> Result<i32, Error> {
         if self.should_dump_mir(instance.def_id()) {
-            let options = rustc_middle::mir::pretty::PrettyPrintMirOptions::from_cli(self.tcx);
-            rustc_middle::mir::pretty::write_mir_fn(
-                self.tcx,
-                body,
-                &mut |_, _| Ok(()),
-                &mut std::io::stderr(),
-                options,
-            )
-            .unwrap();
+            let writer = rustc_middle::mir::pretty::MirWriter::new(self.tcx);
+            writer.write_mir_fn(body, &mut std::io::stderr()).unwrap();
         }
 
         let mut analysis_result = AdjustmentComputation {
