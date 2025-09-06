@@ -8,9 +8,10 @@ use rustc_middle::ty::Ty;
 use rustc_span::Span;
 use tracing::debug;
 
-/// This struct represents a patch to MIR, which can add
-/// new statements and basic blocks and patch over block
-/// terminators.
+/// This struct lets you "patch" a MIR body, i.e. modify it. You can queue up
+/// various changes, such as the addition of new statements and basic blocks
+/// and replacement of terminators, and then apply the queued changes all at
+/// once with `apply`. This is useful for MIR transformation passes.
 pub(crate) struct MirPatch<'tcx> {
     term_patch_map: IndexVec<BasicBlock, Option<TerminatorKind<'tcx>>>,
     new_blocks: Vec<BasicBlockData<'tcx>>,
@@ -28,6 +29,7 @@ pub(crate) struct MirPatch<'tcx> {
 }
 
 impl<'tcx> MirPatch<'tcx> {
+    /// Creates a new, empty patch.
     pub(crate) fn new(body: &Body<'tcx>) -> Self {
         let mut result = MirPatch {
             term_patch_map: IndexVec::from_elem(None, &body.basic_blocks),
@@ -141,21 +143,32 @@ impl<'tcx> MirPatch<'tcx> {
         bb
     }
 
+    /// Has a replacement of this block's terminator been queued in this patch?
     pub(crate) fn is_term_patched(&self, bb: BasicBlock) -> bool {
         self.term_patch_map[bb].is_some()
     }
 
+    /// Universal getter for block data, either it is in 'old' blocks or in patched ones
+    pub(crate) fn block<'a>(
+        &'a self,
+        body: &'a Body<'tcx>,
+        bb: BasicBlock,
+    ) -> &'a BasicBlockData<'tcx> {
+        match bb.index().checked_sub(body.basic_blocks.len()) {
+            Some(new) => &self.new_blocks[new],
+            None => &body[bb],
+        }
+    }
+
     pub(crate) fn terminator_loc(&self, body: &Body<'tcx>, bb: BasicBlock) -> Location {
-        let offset = match bb.index().checked_sub(body.basic_blocks.len()) {
-            Some(index) => self.new_blocks[index].statements.len(),
-            None => body[bb].statements.len(),
-        };
+        let offset = self.block(body, bb).statements.len();
         Location {
             block: bb,
             statement_index: offset,
         }
     }
 
+    /// Queues the addition of a new temporary with additional local info.
     pub(crate) fn new_local_with_info(
         &mut self,
         ty: Ty<'tcx>,
@@ -170,6 +183,7 @@ impl<'tcx> MirPatch<'tcx> {
         Local::new(index)
     }
 
+    /// Queues the addition of a new temporary.
     pub(crate) fn new_temp(&mut self, ty: Ty<'tcx>, span: Span) -> Local {
         let index = self.next_local;
         self.next_local += 1;
@@ -185,6 +199,7 @@ impl<'tcx> MirPatch<'tcx> {
         self.new_locals[new_local_idx].ty
     }
 
+    /// Queues the addition of a new basic block.
     pub(crate) fn new_block(&mut self, data: BasicBlockData<'tcx>) -> BasicBlock {
         let block = BasicBlock::new(self.term_patch_map.len());
         debug!("MirPatch: new_block: {:?}: {:?}", block, data);
@@ -193,21 +208,37 @@ impl<'tcx> MirPatch<'tcx> {
         block
     }
 
+    /// Queues the replacement of a block's terminator.
     pub(crate) fn patch_terminator(&mut self, block: BasicBlock, new: TerminatorKind<'tcx>) {
         assert!(self.term_patch_map[block].is_none());
         debug!("MirPatch: patch_terminator({:?}, {:?})", block, new);
         self.term_patch_map[block] = Some(new);
     }
 
+    /// Queues the insertion of a statement at a given location. The statement
+    /// currently at that location, and all statements that follow, are shifted
+    /// down. If multiple statements are queued for addition at the same
+    /// location, the final statement order after calling `apply` will match
+    /// the queue insertion order.
+    ///
+    /// E.g. if we have `s0` at location `loc` and do these calls:
+    ///
+    ///   p.add_statement(loc, s1);
+    ///   p.add_statement(loc, s2);
+    ///   p.apply(body);
+    ///
+    /// then the final order will be `s1, s2, s0`, with `s1` at `loc`.
     pub(crate) fn add_statement(&mut self, loc: Location, stmt: StatementKind<'tcx>) {
         debug!("MirPatch: add_statement({:?}, {:?})", loc, stmt);
         self.new_statements.push((loc, stmt));
     }
 
+    /// Like `add_statement`, but specialized for assignments.
     pub(crate) fn add_assign(&mut self, loc: Location, place: Place<'tcx>, rv: Rvalue<'tcx>) {
         self.add_statement(loc, StatementKind::Assign(Box::new((place, rv))));
     }
 
+    /// Applies the queued changes.
     pub(crate) fn apply(self, body: &mut Body<'tcx>) {
         debug!(
             "MirPatch: {:?} new temps, starting from index {}: {:?}",
@@ -235,6 +266,9 @@ impl<'tcx> MirPatch<'tcx> {
         }
 
         let mut new_statements = self.new_statements;
+
+        // This must be a stable sort to provide the ordering described in the
+        // comment for `add_statement`.
         new_statements.sort_by_key(|s| s.0);
 
         let mut delta = 0;
@@ -265,10 +299,7 @@ impl<'tcx> MirPatch<'tcx> {
     }
 
     pub(crate) fn source_info_for_location(&self, body: &Body<'tcx>, loc: Location) -> SourceInfo {
-        let data = match loc.block.index().checked_sub(body.basic_blocks.len()) {
-            Some(new) => &self.new_blocks[new],
-            None => &body[loc.block],
-        };
+        let data = self.block(body, loc.block);
         Self::source_info_for_index(data, loc)
     }
 }
