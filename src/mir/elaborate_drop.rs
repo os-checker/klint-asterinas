@@ -5,6 +5,7 @@
 use std::{fmt, iter, mem};
 
 use rustc_abi::{FIRST_VARIANT, FieldIdx, VariantIdx};
+use rustc_hir::def::DefKind;
 use rustc_hir::lang_items::LangItem;
 use rustc_index::Idx;
 use rustc_middle::mir::*;
@@ -263,7 +264,40 @@ where
                     span_bug!(span, "invalid `AsyncDrop` impl_source: {:?}", impl_source);
                 }
             };
-            let drop_fn_def_id = tcx.associated_item_def_ids(drop_trait)[0];
+            // impl_item_refs may be empty if drop fn is not implemented in 'impl AsyncDrop for ...'
+            // (#140974).
+            // Such code will report error, so just generate sync drop here and return
+            let Some(drop_fn_def_id) = tcx
+                .associated_item_def_ids(drop_trait)
+                .first()
+                .and_then(|def_id| {
+                    if tcx.def_kind(def_id) == DefKind::AssocFn
+                        && tcx.check_args_compatible(*def_id, trait_args)
+                    {
+                        Some(def_id)
+                    } else {
+                        None
+                    }
+                })
+                .copied()
+            else {
+                tcx.dcx().span_delayed_bug(
+                    self.elaborator.body().span,
+                    "AsyncDrop type without correct `async fn drop(...)`.",
+                );
+                self.elaborator.patch().patch_terminator(
+                    pin_obj_bb,
+                    TerminatorKind::Drop {
+                        place,
+                        target: succ,
+                        unwind: unwind.into_action(),
+                        replace: false,
+                        drop: None,
+                        async_fut: None,
+                    },
+                );
+                return pin_obj_bb;
+            };
             let drop_fn = Ty::new_fn_def(tcx, drop_fn_def_id, trait_args);
             let sig = drop_fn.fn_sig(tcx);
             let sig = tcx.instantiate_bound_regions_with_erased(sig);
@@ -336,18 +370,20 @@ where
                 bug!();
             };
             let obj_ptr_ty = Ty::new_mut_ptr(tcx, drop_ty);
-            let obj_ptr_place = Place::from(self.new_temp(obj_ptr_ty));
             let unwrap_ty = adt_def.non_enum_variant().fields[FieldIdx::ZERO].ty(tcx, adt_args);
-            let addr = Rvalue::RawPtr(
-                RawPtrKind::Mut,
-                pin_obj_place.project_deeper(
-                    &[
-                        ProjectionElem::Field(FieldIdx::ZERO, unwrap_ty),
-                        ProjectionElem::Deref,
-                    ],
-                    tcx,
-                ),
-            );
+            let obj_ref_place = Place::from(self.new_temp(unwrap_ty));
+            call_statements.push(self.assign(
+                obj_ref_place,
+                Rvalue::Use(Operand::Copy(tcx.mk_place_field(
+                    pin_obj_place,
+                    FieldIdx::ZERO,
+                    unwrap_ty,
+                ))),
+            ));
+
+            let obj_ptr_place = Place::from(self.new_temp(obj_ptr_ty));
+
+            let addr = Rvalue::RawPtr(RawPtrKind::Mut, tcx.mk_place_deref(obj_ref_place));
             call_statements.push(self.assign(obj_ptr_place, addr));
             obj_ptr_place
         };
@@ -382,6 +418,26 @@ where
             },
             StatementKind::StorageDead(fut.local),
         );
+        // StorageDead(fut) in unwind block (at the begin)
+        if let Unwind::To(block) = unwind {
+            self.elaborator.patch().add_statement(
+                Location {
+                    block,
+                    statement_index: 0,
+                },
+                StatementKind::StorageDead(fut.local),
+            );
+        }
+        // StorageDead(fut) in dropline block (at the begin)
+        if let Some(block) = dropline {
+            self.elaborator.patch().add_statement(
+                Location {
+                    block,
+                    statement_index: 0,
+                },
+                StatementKind::StorageDead(fut.local),
+            );
+        }
 
         // #1:pin_obj_bb >>> call Pin<ObjTy>::new_unchecked(&mut obj)
         self.elaborator.patch().patch_terminator(
@@ -404,7 +460,11 @@ where
         if self.tcx().features().async_drop()
             && self.elaborator.body().coroutine.is_some()
             && self.elaborator.allow_async_drops()
-            && !self.elaborator.body()[bb].is_cleanup
+            && !self
+                .elaborator
+                .patch_ref()
+                .block(self.elaborator.body(), bb)
+                .is_cleanup
             && drop_ty.needs_async_drop(self.tcx(), self.elaborator.typing_env())
         {
             self.build_async_drop(
@@ -597,6 +657,7 @@ where
     ///
     /// For example, with 3 fields, the drop ladder is
     ///
+    /// ```text
     /// .d0:
     ///     ELAB(drop location.0 [target=.d1, unwind=.c1])
     /// .d1:
@@ -607,8 +668,10 @@ where
     ///     ELAB(drop location.1 [target=.c2])
     /// .c2:
     ///     ELAB(drop location.2 [target=`self.unwind`])
+    /// ```
     ///
     /// For possible-async drops in coroutines we also need dropline ladder
+    /// ```text
     /// .d0 (mainline):
     ///     ELAB(drop location.0 [target=.d1, unwind=.c1, drop=.e1])
     /// .d1 (mainline):
@@ -623,6 +686,7 @@ where
     ///     ELAB(drop location.1 [target=.e2, unwind=.c2])
     /// .e2 (dropline):
     ///     ELAB(drop location.2 [target=`self.drop`, unwind=`self.unwind`])
+    /// ```
     ///
     /// NOTE: this does not clear the master drop flag, so you need
     /// to point succ/unwind on a `drop_ladder_bottom`.
@@ -757,24 +821,37 @@ where
 
         let skip_contents = adt.is_union() || adt.is_manually_drop();
         let contents_drop = if skip_contents {
+            if adt.has_dtor(self.tcx()) && self.elaborator.get_drop_flag(self.path).is_some() {
+                // the top-level drop flag is usually cleared by open_drop_for_adt_contents
+                // types with destructors would still need an empty drop ladder to clear it
+                //
+                // however, these types are only open dropped in `DropShimElaborator`
+                // which does not have drop flags
+                // a future box-like "DerefMove" trait would allow for this case to happen
+                span_bug!(self.source_info.span, "open dropping partially moved union");
+            }
+
             (self.succ, self.unwind, self.dropline)
         } else {
             self.open_drop_for_adt_contents(adt, args)
         };
 
-        if adt.is_box() {
-            // we need to drop the inside of the box before running the destructor
-            let succ = self.destructor_call_block_sync((contents_drop.0, contents_drop.1));
-            let unwind = contents_drop
-                .1
-                .map(|unwind| self.destructor_call_block_sync((unwind, Unwind::InCleanup)));
-            let dropline = contents_drop
-                .2
-                .map(|dropline| self.destructor_call_block_sync((dropline, contents_drop.1)));
+        if adt.has_dtor(self.tcx()) {
+            let destructor_block = if adt.is_box() {
+                // we need to drop the inside of the box before running the destructor
+                let succ = self.destructor_call_block_sync((contents_drop.0, contents_drop.1));
+                let unwind = contents_drop
+                    .1
+                    .map(|unwind| self.destructor_call_block_sync((unwind, Unwind::InCleanup)));
+                let dropline = contents_drop
+                    .2
+                    .map(|dropline| self.destructor_call_block_sync((dropline, contents_drop.1)));
+                self.open_drop_for_box_contents(adt, args, succ, unwind, dropline)
+            } else {
+                self.destructor_call_block(contents_drop)
+            };
 
-            self.open_drop_for_box_contents(adt, args, succ, unwind, dropline)
-        } else if adt.has_dtor(self.tcx()) {
-            self.destructor_call_block(contents_drop)
+            self.drop_flag_test_block(destructor_block, contents_drop.0, contents_drop.1)
         } else {
             contents_drop.0
         }
@@ -995,16 +1072,7 @@ where
             unwind.is_cleanup(),
         );
 
-        let destructor_block = self.elaborator.patch().new_block(result);
-
-        let block_start = Location {
-            block: destructor_block,
-            statement_index: 0,
-        };
-        self.elaborator
-            .clear_drop_flag(block_start, self.path, DropFlagMode::Shallow);
-
-        self.drop_flag_test_block(destructor_block, succ, unwind)
+        self.elaborator.patch().new_block(result)
     }
 
     fn destructor_call_block(
@@ -1019,15 +1087,7 @@ where
             && !unwind.is_cleanup()
             && ty.is_async_drop(self.tcx(), self.elaborator.typing_env())
         {
-            let destructor_block =
-                self.build_async_drop(self.place, ty, None, succ, unwind, dropline, true);
-            let block_start = Location {
-                block: destructor_block,
-                statement_index: 0,
-            };
-            self.elaborator
-                .clear_drop_flag(block_start, self.path, DropFlagMode::Shallow);
-            self.drop_flag_test_block(destructor_block, succ, unwind)
+            self.build_async_drop(self.place, ty, None, succ, unwind, dropline, true)
         } else {
             self.destructor_call_block_sync((succ, unwind))
         }
@@ -1327,6 +1387,22 @@ where
                 self.open_drop_for_array(ty, *ety, size)
             }
             ty::Slice(ety) => self.drop_loop_trio_for_slice(*ety),
+
+            ty::UnsafeBinder(_) => {
+                // Unsafe binders may elaborate drops if their inner type isn't copy.
+                // This is enforced in typeck, so this should never happen.
+                self.tcx().dcx().span_delayed_bug(
+                    self.source_info.span,
+                    "open drop for unsafe binder shouldn't be encountered",
+                );
+                self.elaborator.patch().new_block(BasicBlockData::new(
+                    Some(Terminator {
+                        source_info: self.source_info,
+                        kind: TerminatorKind::Unreachable,
+                    }),
+                    self.unwind.is_cleanup(),
+                ))
+            }
 
             _ => span_bug!(self.source_info.span, "open drop from non-ADT `{:?}`", ty),
         }
