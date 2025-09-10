@@ -695,7 +695,8 @@ memoize!(
                 // For Adts, we first try to not use any of the args and just try the most
                 // polymorphic version of the type.
                 let poly_typing_env = TypingEnv::post_analysis(cx.tcx, def.did());
-                let poly_args = cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
+                let poly_args = cx
+                    .erase_and_anonymize_regions(GenericArgs::identity_for_item(cx.tcx, def.did()));
                 let poly_poly_ty = poly_typing_env
                     .as_query_input(cx.tcx.mk_ty_from_kind(ty::Adt(*def, poly_args)));
                 if poly_poly_ty != poly_ty {
@@ -782,8 +783,10 @@ memoize!(
 
         if matches!(instance.def, ty::InstanceKind::Item(_)) {
             let poly_typing_env = TypingEnv::post_analysis(cx.tcx, instance.def_id());
-            let poly_args =
-                cx.erase_regions(GenericArgs::identity_for_item(cx.tcx, instance.def_id()));
+            let poly_args = cx.erase_and_anonymize_regions(GenericArgs::identity_for_item(
+                cx.tcx,
+                instance.def_id(),
+            ));
             let poly_poly_instance =
                 poly_typing_env.as_query_input(Instance::new_raw(instance.def_id(), poly_args));
             let generic = poly_poly_instance == poly_instance;
