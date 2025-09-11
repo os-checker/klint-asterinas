@@ -220,6 +220,11 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             // printk can be called from any context.
             "_printk" | "_dev_printk" | "rust_fmt_argument" => NO_ASSUMPTION,
 
+            // property.h
+            "fwnode_get_name" | "fwnode_count_parents" | "fwnode_get_name_prefix" => NO_ASSUMPTION,
+            "fwnode_handle_get" | "fwnode_get_nth_parent" => NO_ASSUMPTION,
+            "fwnode_handle_put" => USE_SPINLOCK,
+
             // random.h
             "wait_for_random_bytes" => MIGHT_SLEEP,
 
