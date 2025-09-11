@@ -6,6 +6,9 @@
 #![feature(box_patterns)]
 #![feature(if_let_guard)]
 #![feature(never_type)]
+// Used in monomorphize collector
+#![feature(impl_trait_in_assoc_type)]
+#![feature(once_cell_get_mut)]
 #![warn(rustc::internal)]
 
 #[macro_use]

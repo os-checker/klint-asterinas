@@ -453,7 +453,7 @@ impl<'tcx> LateLintPass<'tcx> for AtomicContext<'tcx> {
 
         let mono_items = super::monomorphize_collector::collect_crate_mono_items(
             cx.tcx,
-            crate::monomorphize_collector::MonoItemCollectionMode::Eager,
+            crate::monomorphize_collector::MonoItemCollectionStrategy::Eager,
         )
         .0;
 

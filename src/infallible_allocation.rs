@@ -10,7 +10,7 @@ use rustc_session::{declare_lint_pass, declare_tool_lint};
 use rustc_span::source_map::Spanned;
 use rustc_span::symbol::sym;
 
-use crate::monomorphize_collector::MonoItemCollectionMode;
+use crate::monomorphize_collector::MonoItemCollectionStrategy;
 
 declare_tool_lint! {
     pub klint::INFALLIBLE_ALLOCATION,
@@ -32,7 +32,7 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
         // Use eager mode here so dead code is also linted on.
         let access_map = super::monomorphize_collector::collect_crate_mono_items(
             cx.tcx,
-            MonoItemCollectionMode::Eager,
+            MonoItemCollectionStrategy::Eager,
         )
         .1;
 
