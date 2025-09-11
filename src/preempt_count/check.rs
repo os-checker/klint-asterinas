@@ -319,10 +319,11 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
     }
 
     fn check_static(&mut self, def_id: DefId) -> Result<(), Error> {
-        if !crate::monomorphize_collector::should_codegen_locally(
-            self.cx.tcx,
-            &Instance::mono(self.cx.tcx, def_id),
-        ) {
+        if !self
+            .cx
+            .tcx
+            .should_codegen_locally(Instance::mono(self.cx.tcx, def_id))
+        {
             return Ok(());
         }
 
@@ -761,7 +762,7 @@ memoize!(
             typing_env,
             value: instance,
         } = poly_instance;
-        if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
+        if !cx.tcx.should_codegen_locally(instance) {
             return Ok(());
         }
 

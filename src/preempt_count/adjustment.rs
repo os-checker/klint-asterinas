@@ -692,7 +692,7 @@ memoize!(
                 .0);
         }
 
-        if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
+        if !cx.tcx.should_codegen_locally(instance) {
             if let Some(p) = cx.sql_load::<instance_adjustment>(poly_instance) {
                 return p;
             }
@@ -811,7 +811,7 @@ memoize!(
         } = poly_instance;
 
         // Only check locally codegenned instances.
-        if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
+        if !cx.tcx.should_codegen_locally(instance) {
             return Ok(());
         }
 

@@ -310,7 +310,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         // Only check locally codegenned instances.
-        if !crate::monomorphize_collector::should_codegen_locally(self.tcx, &instance) {
+        if !self.tcx.should_codegen_locally(instance) {
             let expectation = self.instance_expectation(typing_env.as_query_input(instance))?;
             diag.span_note(
                 span,
@@ -975,7 +975,7 @@ memoize!(
                 .1);
         }
 
-        if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
+        if !cx.tcx.should_codegen_locally(instance) {
             if let Some(p) = cx.sql_load::<instance_expectation>(poly_instance) {
                 return p;
             }
@@ -1095,7 +1095,7 @@ memoize!(
         } = poly_instance;
 
         // Only check locally codegenned instances.
-        if !crate::monomorphize_collector::should_codegen_locally(cx.tcx, &instance) {
+        if !cx.tcx.should_codegen_locally(instance) {
             return Ok(());
         }
 
