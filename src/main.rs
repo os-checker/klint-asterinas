@@ -21,6 +21,7 @@ extern crate rustc_middle;
 extern crate tracing;
 
 extern crate itertools;
+extern crate object;
 extern crate rustc_abi;
 extern crate rustc_ast;
 extern crate rustc_codegen_ssa;
@@ -47,7 +48,7 @@ use rustc_driver::Callbacks;
 use rustc_interface::interface::Config;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::EarlyDiagCtxt;
-use rustc_session::config::ErrorOutputType;
+use rustc_session::config::{ErrorOutputType, OutputType};
 use std::sync::atomic::Ordering;
 
 use crate::ctxt::AnalysisCtxt;
@@ -57,6 +58,7 @@ mod ctxt;
 
 mod atomic_context;
 mod attribute;
+mod binary_analysis;
 mod diagnostic;
 mod driver;
 mod infallible_allocation;
@@ -116,6 +118,13 @@ impl driver::CallbacksExt for MyCallbacks {
 
     fn ext_cx<'tcx>(&mut self, tcx: TyCtxt<'tcx>) -> Self::ExtCtxt<'tcx> {
         AnalysisCtxt::new(tcx)
+    }
+
+    fn after_codegen<'tcx>(&mut self, cx: &'tcx AnalysisCtxt<'tcx>) {
+        let outputs = cx.output_filenames(());
+        if outputs.outputs.contains_key(&OutputType::Object) {
+            binary_analysis::binary_analysis(cx.tcx, outputs.path(OutputType::Object).as_path());
+        }
     }
 }
 
