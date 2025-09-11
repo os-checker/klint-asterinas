@@ -68,6 +68,8 @@ struct MyCallbacks;
 
 impl Callbacks for MyCallbacks {
     fn config(&mut self, config: &mut Config) {
+        config.locale_resources.push(crate::DEFAULT_LOCALE_RESOURCE);
+
         config.override_queries = Some(|_, provider| {
             static ORIGINAL_OPTIMIZED_MIR: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
