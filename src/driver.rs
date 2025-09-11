@@ -1,0 +1,178 @@
+//! Contains hacks that changes the flow of compiler.
+
+use std::any::Any;
+use std::sync::{Arc, Mutex};
+
+use rustc_codegen_ssa::traits::CodegenBackend;
+use rustc_codegen_ssa::{CodegenResults, TargetConfig};
+use rustc_data_structures::fx::FxIndexMap;
+use rustc_driver::{Callbacks, Compilation};
+use rustc_interface::Config;
+use rustc_interface::interface::Compiler;
+use rustc_metadata::EncodedMetadata;
+use rustc_metadata::creader::MetadataLoaderDyn;
+use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
+use rustc_middle::ty::TyCtxt;
+use rustc_middle::util::Providers;
+use rustc_session::config::{Options, OutputFilenames, PrintRequest};
+use rustc_session::{EarlyDiagCtxt, Session};
+
+pub trait CallbacksExt: Callbacks + Send + 'static {
+    fn after_codegen<'tcx>(&mut self, _tcx: TyCtxt<'tcx>) {}
+}
+
+struct CallbackWrapper<C> {
+    callback: Arc<Mutex<C>>,
+}
+
+impl<C: CallbacksExt> Callbacks for CallbackWrapper<C> {
+    fn config(&mut self, config: &mut Config) {
+        self.callback.lock().unwrap().config(config);
+
+        let make_codegen_backend = config.make_codegen_backend.take().unwrap_or_else(|| {
+            Box::new(|opts: &Options| {
+                let early_dcx = EarlyDiagCtxt::new(opts.error_format);
+                let target = rustc_session::config::build_target_config(
+                    &early_dcx,
+                    &opts.target_triple,
+                    opts.sysroot.path(),
+                );
+                rustc_interface::util::get_codegen_backend(
+                    &early_dcx,
+                    &opts.sysroot,
+                    opts.unstable_opts.codegen_backend.as_deref(),
+                    &target,
+                )
+            })
+        });
+
+        // By default, Rust starts codegen with a TyCtxt, but then leaves `TyCtxt` and join
+        // codegen. This is useful to reduce memory consumption while building, but also means that
+        // we will no longer have access to `TyCtxt` when we want to lint based on the generated
+        // binary. We therefore hook the backend so that the whole process is done with `TyCtxt`
+        // still present.
+        let callback_clone = self.callback.clone();
+        config.make_codegen_backend = Some(Box::new(|opts| {
+            let codegen_backend = make_codegen_backend(opts);
+            Box::new(BackendWrapper {
+                backend: codegen_backend,
+                callback: callback_clone,
+            })
+        }));
+    }
+
+    fn after_crate_root_parsing(
+        &mut self,
+        compiler: &Compiler,
+        krate: &mut rustc_ast::Crate,
+    ) -> Compilation {
+        self.callback
+            .lock()
+            .unwrap()
+            .after_crate_root_parsing(compiler, krate)
+    }
+
+    fn after_expansion<'tcx>(&mut self, compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        self.callback.lock().unwrap().after_expansion(compiler, tcx)
+    }
+
+    fn after_analysis<'tcx>(&mut self, compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        self.callback.lock().unwrap().after_analysis(compiler, tcx)
+    }
+}
+
+pub struct BackendWrapper<C> {
+    backend: Box<dyn CodegenBackend>,
+    callback: Arc<Mutex<C>>,
+}
+
+impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
+    fn locale_resource(&self) -> &'static str {
+        self.backend.locale_resource()
+    }
+
+    fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Box<dyn Any> {
+        let ongoing_codegen = self.backend.codegen_crate(tcx);
+        let outputs = tcx.output_filenames(());
+        let (cg, work_map) = self
+            .backend
+            .join_codegen(ongoing_codegen, tcx.sess, outputs);
+        self.callback.lock().unwrap().after_codegen(tcx);
+        Box::new((cg, work_map))
+    }
+
+    fn join_codegen(
+        &self,
+        ongoing_codegen: Box<dyn Any>,
+        _sess: &Session,
+        _outputs: &OutputFilenames,
+    ) -> (CodegenResults, FxIndexMap<WorkProductId, WorkProduct>) {
+        *ongoing_codegen.downcast().unwrap()
+    }
+
+    fn init(&self, sess: &Session) {
+        self.backend.init(sess)
+    }
+
+    fn print(&self, req: &PrintRequest, out: &mut String, sess: &Session) {
+        self.backend.print(req, out, sess)
+    }
+
+    fn target_config(&self, sess: &Session) -> TargetConfig {
+        self.backend.target_config(sess)
+    }
+
+    fn print_passes(&self) {
+        self.backend.print_passes()
+    }
+
+    fn print_version(&self) {
+        self.backend.print_version()
+    }
+
+    fn metadata_loader(&self) -> Box<MetadataLoaderDyn> {
+        self.backend.metadata_loader()
+    }
+
+    fn provide(&self, providers: &mut Providers) {
+        self.backend.provide(providers)
+    }
+
+    fn link(
+        &self,
+        sess: &Session,
+        codegen_results: CodegenResults,
+        metadata: EncodedMetadata,
+        outputs: &OutputFilenames,
+    ) {
+        self.backend.link(sess, codegen_results, metadata, outputs)
+    }
+}
+
+pub fn run_compiler<C: CallbacksExt>(at_args: &[String], callback: C) {
+    rustc_driver::run_compiler(
+        at_args,
+        &mut CallbackWrapper {
+            callback: Arc::new(Mutex::new(callback)),
+        },
+    );
+}
+
+#[macro_export]
+macro_rules! hook_query {
+    ($provider: expr => |$tcx: ident, $query: ident, $original: ident| $content: block) => {{
+        static ORIGINAL: std::sync::atomic::AtomicPtr<()> =
+            std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+        ORIGINAL.store($provider as *mut (), std::sync::atomic::Ordering::Relaxed);
+        $provider = |$tcx, $query| {
+            let ptr = ORIGINAL.load(Ordering::Relaxed);
+            let $original = unsafe { std::mem::transmute::<*mut (), fn(_, _) -> _>(ptr) };
+            // Insert a type check to ensure that the signature is indeed matching.
+            if false {
+                return $original($tcx, $query);
+            }
+            $content
+        };
+    }};
+}

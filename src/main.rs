@@ -21,6 +21,7 @@ extern crate tracing;
 extern crate itertools;
 extern crate rustc_abi;
 extern crate rustc_ast;
+extern crate rustc_codegen_ssa;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;
@@ -31,6 +32,7 @@ extern crate rustc_infer;
 extern crate rustc_interface;
 extern crate rustc_lint;
 extern crate rustc_log;
+extern crate rustc_metadata;
 extern crate rustc_mir_dataflow;
 extern crate rustc_monomorphize;
 extern crate rustc_serialize;
@@ -38,8 +40,6 @@ extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
 extern crate rustc_trait_selection;
-
-use std::sync::atomic::AtomicPtr;
 
 use rustc_driver::Callbacks;
 use rustc_interface::interface::Config;
@@ -52,6 +52,7 @@ mod ctxt;
 
 mod atomic_context;
 mod attribute;
+mod driver;
 mod infallible_allocation;
 mod lattice;
 mod mir;
@@ -74,25 +75,17 @@ impl Callbacks for MyCallbacks {
         config.locale_resources.push(crate::DEFAULT_LOCALE_RESOURCE);
 
         config.override_queries = Some(|_, provider| {
-            static ORIGINAL_OPTIMIZED_MIR: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
-
-            ORIGINAL_OPTIMIZED_MIR.store(provider.optimized_mir as *mut (), Ordering::Relaxed);
-            provider.optimized_mir = |tcx, def_id| {
-                // Calling `optimized_mir` will steal the result of query `mir_drops_elaborated_and_const_checked`,
-                // so hijack `optimized_mir` to run `analysis_mir` first.
-
+            // Calling `optimized_mir` will steal the result of query `mir_drops_elaborated_and_const_checked`,
+            // so hijack `optimized_mir` to run `analysis_mir` first.
+            hook_query!(provider.optimized_mir => |tcx, def_id, original| {
                 // Skip `analysis_mir` call if this is a constructor, since it will be delegated back to
                 // `optimized_mir` for building ADT constructor shim.
                 if !tcx.is_constructor(def_id.to_def_id()) {
                     crate::mir::local_analysis_mir(tcx, def_id);
                 }
 
-                let ptr = ORIGINAL_OPTIMIZED_MIR.load(Ordering::Relaxed);
-                assert!(!ptr.is_null());
-                let original_optimized_mir =
-                    unsafe { std::mem::transmute::<*mut (), fn(_, _) -> _>(ptr) };
-                original_optimized_mir(tcx, def_id)
-            };
+                original(tcx, def_id)
+            });
         });
         config.register_lints = Some(Box::new(move |_, lint_store| {
             lint_store.register_lints(&[&INCORRECT_ATTRIBUTE]);
@@ -105,12 +98,14 @@ impl Callbacks for MyCallbacks {
     }
 }
 
+impl driver::CallbacksExt for MyCallbacks {}
+
 fn main() {
     let handler = EarlyDiagCtxt::new(ErrorOutputType::default());
     rustc_driver::init_logger(&handler, rustc_log::LoggerConfig::from_env("KLINT_LOG"));
     let args: Vec<_> = std::env::args().collect();
 
-    rustc_driver::run_compiler(&args, &mut MyCallbacks);
+    driver::run_compiler(&args, MyCallbacks);
 }
 
 rustc_fluent_macro::fluent_messages! { "./messages.ftl" }
