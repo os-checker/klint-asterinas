@@ -258,43 +258,44 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                         continue;
                     }
 
-                    if let Some((prev_addr, prev_row)) = prev {
-                        if (prev_addr..encoded_offset).contains(&(offset as i64)) {
-                            // Found a line info that covers this!
-                            let file = rows.header().file(prev_row.file_index()).ok_or(
-                                Error::UnexpectedDwarf("debug_lines referenced non-existent file"),
-                            )?;
+                    if let Some((prev_addr, prev_row)) = prev
+                        && prev_row.line().is_some()
+                        && (prev_addr..encoded_offset).contains(&(offset as i64))
+                    {
+                        // Found a line info that covers this!
+                        let file = rows.header().file(prev_row.file_index()).ok_or(
+                            Error::UnexpectedDwarf("debug_lines referenced non-existent file"),
+                        )?;
 
-                            let mut path = PathBuf::new();
+                        let mut path = PathBuf::new();
 
-                            if file.directory_index() != 0 {
-                                let directory =
-                                    file.directory(rows.header()).ok_or(Error::UnexpectedDwarf(
-                                        "debug_lines referenced non-existent directory",
-                                    ))?;
-
-                                path.push(
-                                    self.dwarf
-                                        .attr_string(&unit, directory)?
-                                        .to_string()?
-                                        .as_ref(),
-                                );
-                            }
+                        if file.directory_index() != 0 {
+                            let directory =
+                                file.directory(rows.header()).ok_or(Error::UnexpectedDwarf(
+                                    "debug_lines referenced non-existent directory",
+                                ))?;
 
                             path.push(
                                 self.dwarf
-                                    .attr_string(&unit, file.path_name())?
+                                    .attr_string(&unit, directory)?
                                     .to_string()?
                                     .as_ref(),
                             );
-
-                            let line = prev_row.line().map_or(0, NonZero::get) as u32;
-                            let column = match prev_row.column() {
-                                gimli::ColumnType::LeftEdge => 0,
-                                gimli::ColumnType::Column(v) => v.get() as u32,
-                            };
-                            return Ok(Some((path, line, column)));
                         }
+
+                        path.push(
+                            self.dwarf
+                                .attr_string(&unit, file.path_name())?
+                                .to_string()?
+                                .as_ref(),
+                        );
+
+                        let line = prev_row.line().map_or(0, NonZero::get) as u32;
+                        let column = match prev_row.column() {
+                            gimli::ColumnType::LeftEdge => 0,
+                            gimli::ColumnType::Column(v) => v.get() as u32,
+                        };
+                        return Ok(Some((path, line, column)));
                     }
 
                     if row.end_sequence() {
