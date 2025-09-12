@@ -3,7 +3,7 @@ use std::num::NonZero;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gimli::{Dwarf, EndianSlice, LineRow, Reader, RelocateReader};
+use gimli::{Dwarf, EndianSlice, LineProgramHeader, LineRow, Reader, RelocateReader, Unit};
 use object::{
     Endian, File, Object, ObjectSection, ObjectSymbol, Relocation, RelocationKind,
     RelocationTarget, Section, SectionIndex,
@@ -198,14 +198,20 @@ fn load_section<'file, 'data>(
     })
 }
 
-type DwarfTy<'a, 'file, 'data> =
-    Dwarf<RelocateReader<EndianSlice<'a, gimli::LittleEndian>, &'a SectionRelocate<'file, 'data>>>;
+type ReaderTy<'a, 'file, 'data> =
+    RelocateReader<EndianSlice<'a, gimli::LittleEndian>, &'a SectionRelocate<'file, 'data>>;
 
 pub struct DwarfLoader<'file, 'data> {
-    // This is actually `DwarfTy<'dwarf_sections, 'file, 'data>`.
-    dwarf: DwarfTy<'file, 'file, 'data>,
+    // This is actually `Dwarf<ReaderTy<'dwarf_sections, 'file, 'data>`.
+    dwarf: Dwarf<ReaderTy<'file, 'file, 'data>>,
     #[allow(unused)]
     dwarf_sections: Arc<gimli::DwarfSections<SectionWithReloc<'file, 'data>>>,
+}
+
+pub struct Location {
+    pub file: PathBuf,
+    pub line: u64,
+    pub column: u64,
 }
 
 impl<'file, 'data> DwarfLoader<'file, 'data> {
@@ -225,7 +231,10 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
         });
         // SAFETY: erase lifetime. This is fine as `dwarf` will be dropped before `dwarf_sections`.
         let dwarf_transmute = unsafe {
-            std::mem::transmute::<DwarfTy<'_, 'file, 'data>, DwarfTy<'_, 'file, 'data>>(dwarf)
+            std::mem::transmute::<
+                Dwarf<ReaderTy<'_, 'file, 'data>>,
+                Dwarf<ReaderTy<'_, 'file, 'data>>,
+            >(dwarf)
         };
 
         Ok(Self {
@@ -234,11 +243,46 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
         })
     }
 
+    fn file_name(
+        &self,
+        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
+        line: &LineProgramHeader<ReaderTy<'_, 'file, 'data>>,
+        index: u64,
+    ) -> Result<PathBuf, Error> {
+        let file = line.file(index).ok_or(Error::UnexpectedDwarf(
+            "debug_lines referenced non-existent file",
+        ))?;
+
+        let mut path = PathBuf::new();
+
+        if file.directory_index() != 0 {
+            let directory = file.directory(line).ok_or(Error::UnexpectedDwarf(
+                "debug_lines referenced non-existent directory",
+            ))?;
+
+            path.push(
+                self.dwarf
+                    .attr_string(&unit, directory)?
+                    .to_string()?
+                    .as_ref(),
+            );
+        }
+
+        path.push(
+            self.dwarf
+                .attr_string(&unit, file.path_name())?
+                .to_string()?
+                .as_ref(),
+        );
+
+        Ok(path)
+    }
+
     pub fn locate<'tcx>(
         &self,
         section_index: SectionIndex,
         offset: u64,
-    ) -> Result<Option<(PathBuf, u32, u32)>, Error> {
+    ) -> Result<Option<Location>, Error> {
         // FIXME: should this be optimized?
 
         let mut iter = self.dwarf.units();
@@ -262,40 +306,13 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                         && prev_row.line().is_some()
                         && (prev_addr..encoded_offset).contains(&(offset as i64))
                     {
-                        // Found a line info that covers this!
-                        let file = rows.header().file(prev_row.file_index()).ok_or(
-                            Error::UnexpectedDwarf("debug_lines referenced non-existent file"),
-                        )?;
-
-                        let mut path = PathBuf::new();
-
-                        if file.directory_index() != 0 {
-                            let directory =
-                                file.directory(rows.header()).ok_or(Error::UnexpectedDwarf(
-                                    "debug_lines referenced non-existent directory",
-                                ))?;
-
-                            path.push(
-                                self.dwarf
-                                    .attr_string(&unit, directory)?
-                                    .to_string()?
-                                    .as_ref(),
-                            );
-                        }
-
-                        path.push(
-                            self.dwarf
-                                .attr_string(&unit, file.path_name())?
-                                .to_string()?
-                                .as_ref(),
-                        );
-
-                        let line = prev_row.line().map_or(0, NonZero::get) as u32;
+                        let file = self.file_name(&unit, rows.header(), prev_row.file_index())?;
+                        let line = prev_row.line().map_or(0, NonZero::get);
                         let column = match prev_row.column() {
                             gimli::ColumnType::LeftEdge => 0,
-                            gimli::ColumnType::Column(v) => v.get() as u32,
+                            gimli::ColumnType::Column(v) => v.get(),
                         };
-                        return Ok(Some((path, line, column)));
+                        return Ok(Some(Location { file, line, column }));
                     }
 
                     if row.end_sequence() {

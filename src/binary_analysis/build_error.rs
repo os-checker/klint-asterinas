@@ -84,10 +84,10 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
 
                 let reconstruct_span: Result<_, super::dwarf::Error> = try {
                     let loader = super::dwarf::DwarfLoader::new(file)?;
-                    let (file, line, column) = loader.locate(section.index(), offset)?.ok_or(
+                    let loc = loader.locate(section.index(), offset)?.ok_or(
                         super::dwarf::Error::UnexpectedDwarf("cannot find line number info"),
                     )?;
-                    super::reconstruct::recover_span_from_line_no(tcx, &file, line, column).ok_or(
+                    super::reconstruct::recover_span_from_line_no(tcx, &loc).ok_or(
                         super::dwarf::Error::Other("cannot find file in compiler session"),
                     )?
                 };
