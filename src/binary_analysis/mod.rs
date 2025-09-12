@@ -5,6 +5,8 @@ use object::{File as ObjectFile, Object, ObjectSection, ObjectSymbol, Section, S
 use rustc_middle::ty::TyCtxt;
 
 mod build_error;
+mod dwarf;
+mod reconstruct;
 
 pub fn binary_analysis<'tcx>(tcx: TyCtxt<'tcx>, path: &Path) {
     let file = File::open(path).unwrap();

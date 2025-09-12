@@ -66,7 +66,7 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
                     continue;
                 };
 
-                tcx.dcx().emit_err(match mono {
+                let mut diag = tcx.dcx().create_err(match mono {
                     MonoItem::Fn(instance) => BuildErrorReferenced {
                         span: tcx.def_span(instance.def_id()),
                         kind: "fn",
@@ -82,6 +82,29 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
                         bug!();
                     }
                 });
+
+                let reconstruct_span: Result<_, super::dwarf::Error> = try {
+                    let loader = super::dwarf::DwarfLoader::new(file)?;
+                    let (file, line, column) = loader.locate(section.index(), offset)?.ok_or(
+                        super::dwarf::Error::UnexpectedDwarf("cannot find line number info"),
+                    )?;
+                    super::reconstruct::recover_span_from_line_no(tcx, &file, line, column).ok_or(
+                        super::dwarf::Error::Other("cannot find file in compiler session"),
+                    )?
+                };
+
+                match reconstruct_span {
+                    Ok(span) => {
+                        diag.span_note(span, "invocation happens here");
+                    }
+                    Err(err) => {
+                        diag.note(format!(
+                            "attempt to reconstruct source information from DWARF failed: {err}"
+                        ));
+                    }
+                }
+
+                diag.emit();
             }
         }
     }

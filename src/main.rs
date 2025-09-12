@@ -6,6 +6,7 @@
 #![feature(box_patterns)]
 #![feature(if_let_guard)]
 #![feature(never_type)]
+#![feature(try_blocks)]
 // Used in monomorphize collector
 #![feature(impl_trait_in_assoc_type)]
 #![feature(once_cell_get_mut)]
@@ -20,6 +21,7 @@ extern crate rustc_middle;
 #[macro_use]
 extern crate tracing;
 
+extern crate gimli;
 extern crate itertools;
 extern crate object;
 extern crate rustc_abi;
@@ -43,6 +45,7 @@ extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
 extern crate rustc_trait_selection;
+extern crate thiserror;
 
 use rustc_driver::Callbacks;
 use rustc_interface::interface::Config;
