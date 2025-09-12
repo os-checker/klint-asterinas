@@ -51,10 +51,15 @@ fn decode_address(address: u64) -> (SectionIndex, i64) {
     )
 }
 
-#[derive(Debug)]
 struct SectionRelocate<'file, 'data> {
     object: &'file File<'data>,
     map: FxHashMap<u64, Relocation>,
+}
+
+impl std::fmt::Debug for SectionRelocate<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SectionRelocate").finish()
+    }
 }
 
 impl<'file, 'data> SectionRelocate<'file, 'data> {
