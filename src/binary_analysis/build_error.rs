@@ -40,11 +40,10 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
     // We need to figure out why it is being generated.
 
     // Collect all mono items, which we will use to find out which symbol is problematic.
-    let mono_items = crate::monomorphize_collector::collect_crate_mono_items(
+    let (mono_items, usage_map) = crate::monomorphize_collector::collect_crate_mono_items(
         tcx,
         crate::monomorphize_collector::MonoItemCollectionStrategy::Lazy,
-    )
-    .0;
+    );
 
     for section in file.sections() {
         for (offset, relocation) in section.relocations() {
@@ -94,8 +93,24 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
                 };
 
                 match reconstruct_span {
-                    Ok(span) => {
-                        diag.span_note(span, "invocation happens here");
+                    Ok(mut span) => {
+                        let mut site_recovered = false;
+                        let used_items = usage_map.used_item(*mono);
+                        for used_item in used_items {
+                            if used_item.node.symbol_name(tcx).name == "rust_build_error" {
+                                if super::reconstruct::recover_span(span, used_item.span) {
+                                    span = used_item.span;
+                                    site_recovered = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if site_recovered {
+                            diag.span_note(span, "invocation happens here");
+                        } else {
+                            diag.span_note(span, "invocation happens here, in an inlined function");
+                        }
                     }
                     Err(err) => {
                         diag.note(format!(

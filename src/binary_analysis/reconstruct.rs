@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use rustc_middle::ty::TyCtxt;
-use rustc_span::{BytePos, FileName, Span};
+use rustc_span::{BytePos, DUMMY_SP, FileName, Span};
 
 pub fn recover_span_from_line_no<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -30,4 +30,15 @@ pub fn recover_span_from_line_no<'tcx>(
         // We only have a single column info. A good approximation is to extend to end of line (which is typically the case for function calls).
         BytePos(range.end.0 - 1),
     ))
+}
+
+// Compare a recovered span from a compiler-produced span, and determine if they're likely the same source.
+pub fn recover_span<'tcx>(recover_span: Span, span: Span) -> bool {
+    // Recovered span is produced through debug info. This will undergo the debuginfo collapse process.
+    // Before comparing, undergo the same process for `span`.
+
+    let collapsed = rustc_span::hygiene::walk_chain_collapsed(span, DUMMY_SP);
+
+    let range = collapsed.lo()..collapsed.hi();
+    range.contains(&recover_span.lo())
 }

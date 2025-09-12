@@ -139,6 +139,10 @@ impl<'tcx> UsageMap<'tcx> {
             f(item, used_item);
         }
     }
+
+    pub fn used_item(&self, item: MonoItem<'tcx>) -> &[Spanned<MonoItem<'tcx>>] {
+        self.used_map.get(&item).unwrap()
+    }
 }
 
 struct MonoItems<'tcx> {
