@@ -1,4 +1,5 @@
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{Instance, TyCtxt};
+use rustc_middle::{mir, ty};
 use rustc_span::{BytePos, DUMMY_SP, FileName, Span};
 
 pub fn recover_span_from_line_no<'tcx>(
@@ -37,4 +38,122 @@ pub fn recover_span<'tcx>(recover_span: Span, span: Span) -> bool {
 
     let range = collapsed.lo()..collapsed.hi();
     range.contains(&recover_span.lo())
+}
+
+pub fn recover_fn_call_span<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    caller: Instance<'tcx>,
+    callee: &str,
+    location: Option<&super::dwarf::Location>,
+) -> Option<(Instance<'tcx>, Span)> {
+    let mir = tcx.instance_mir(caller.def);
+
+    let mut callee_instance = None;
+    let mut spans = Vec::new();
+
+    for block in mir.basic_blocks.iter() {
+        let terminator = block.terminator();
+
+        // Skip over inlined body. We'll check them from scopes directly.
+        if mir.source_scopes[terminator.source_info.scope]
+            .inlined
+            .is_some()
+        {
+            continue;
+        }
+
+        let instance = match terminator.kind {
+            mir::TerminatorKind::Call { ref func, .. }
+            | mir::TerminatorKind::TailCall { ref func, .. } => {
+                let callee_ty = func.ty(mir, tcx);
+                let callee_ty = caller.instantiate_mir_and_normalize_erasing_regions(
+                    tcx,
+                    ty::TypingEnv::fully_monomorphized(),
+                    ty::EarlyBinder::bind(callee_ty),
+                );
+
+                let ty::FnDef(def_id, args) = *callee_ty.kind() else {
+                    continue;
+                };
+                ty::Instance::expect_resolve(
+                    tcx,
+                    ty::TypingEnv::fully_monomorphized(),
+                    def_id,
+                    args,
+                    terminator.source_info.span,
+                )
+            }
+            mir::TerminatorKind::Drop { ref place, .. } => {
+                let ty = place.ty(mir, tcx).ty;
+                let ty = caller.instantiate_mir_and_normalize_erasing_regions(
+                    tcx,
+                    ty::TypingEnv::fully_monomorphized(),
+                    ty::EarlyBinder::bind(ty),
+                );
+                Instance::resolve_drop_in_place(tcx, ty)
+            }
+
+            _ => continue,
+        };
+
+        if tcx.symbol_name(instance).name != callee {
+            continue;
+        }
+
+        callee_instance = Some(instance);
+        spans.push(terminator.source_info.span);
+    }
+
+    // In addition to direct function calls, we should also inspect inlined functions.
+    for scope in mir.source_scopes.iter() {
+        if scope.inlined_parent_scope.is_none()
+            && let Some((instance, span)) = scope.inlined
+        {
+            if tcx.symbol_name(instance).name != callee {
+                continue;
+            }
+
+            callee_instance = Some(instance);
+            spans.push(span);
+        }
+    }
+
+    let Some(callee_instance) = callee_instance else {
+        tracing::error!("{} does not contain call to {}", caller, callee);
+        return None;
+    };
+
+    // If there's only a single span, then it has to be the correct span.
+    if spans.len() == 1 {
+        return Some((callee_instance, spans[0]));
+    }
+
+    // Otherwise, we need to use the DWARF location information to find the best related span.
+    let Some(loc) = &location else {
+        tracing::warn!(
+            "no way to distinguish {}'s use of {}",
+            caller,
+            callee_instance
+        );
+        return Some((callee_instance, spans[0]));
+    };
+
+    let Some(recovered_span) = recover_span_from_line_no(tcx, loc) else {
+        tracing::warn!(
+            "no way to distinguish {}'s use of {}",
+            caller,
+            callee_instance
+        );
+        return Some((callee_instance, spans[0]));
+    };
+
+    // Now we have a recovered span. Use this span to match spans that we have.
+    for span in spans {
+        if recover_span(recovered_span, span) {
+            return Some((callee_instance, span));
+        }
+    }
+
+    // No perfect match, just use the recovered span that we have.
+    Some((callee_instance, recovered_span))
 }

@@ -40,10 +40,11 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
     // We need to figure out why it is being generated.
 
     // Collect all mono items, which we will use to find out which symbol is problematic.
-    let (mono_items, usage_map) = crate::monomorphize_collector::collect_crate_mono_items(
+    let mono_items = crate::monomorphize_collector::collect_crate_mono_items(
         tcx,
         crate::monomorphize_collector::MonoItemCollectionStrategy::Lazy,
-    );
+    )
+    .0;
 
     for section in file.sections() {
         for (offset, relocation) in section.relocations() {
@@ -82,41 +83,73 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
                     }
                 });
 
-                let reconstruct_span: Result<_, super::dwarf::Error> = try {
-                    let loader = super::dwarf::DwarfLoader::new(file)?;
+                let loader = super::dwarf::DwarfLoader::new(file)
+                    .expect("DWARF loader creation should not fail");
+                let mut frame = match mono {
+                    MonoItem::Fn(instance) => Some(*instance),
+                    _ => None,
+                };
+
+                let result: Result<_, super::dwarf::Error> = try {
+                    let call_stack = loader.inline_info(section.index(), offset)?;
+                    if let Some(first) = call_stack.first() {
+                        if first.caller != symbol {
+                            Err(super::dwarf::Error::UnexpectedDwarf(
+                                "root of call stack is unexpected",
+                            ))?
+                        }
+                    }
+                    for call in call_stack {
+                        if let Some(caller) = frame.take() {
+                            if let Some((callee, span)) = super::reconstruct::recover_fn_call_span(
+                                tcx,
+                                caller,
+                                &call.callee,
+                                call.location.as_ref(),
+                            ) {
+                                frame = Some(callee);
+                                diag.span_note(span, format!("which calls `{callee}`"));
+                            }
+                        }
+                    }
+                };
+                if let Err(err) = result {
+                    diag.note(format!(
+                        "attempt to reconstruct inline information from DWARF failed: {err}"
+                    ));
+                }
+
+                let result: Result<_, super::dwarf::Error> = try {
                     let loc = loader.locate(section.index(), offset)?.ok_or(
                         super::dwarf::Error::UnexpectedDwarf("cannot find line number info"),
                     )?;
-                    super::reconstruct::recover_span_from_line_no(tcx, &loc).ok_or(
-                        super::dwarf::Error::Other("cannot find file in compiler session"),
-                    )?
+
+                    if let Some(frame) = frame
+                        && let Some((_, span)) = super::reconstruct::recover_fn_call_span(
+                            tcx,
+                            frame,
+                            "rust_build_error",
+                            Some(&loc),
+                        )
+                    {
+                        diag.span_note(
+                            span,
+                            "which contains a `build_error` call that is not optimized out",
+                        );
+                    } else {
+                        let span = super::reconstruct::recover_span_from_line_no(tcx, &loc).ok_or(
+                            super::dwarf::Error::Other("cannot find file in compiler session"),
+                        )?;
+                        diag.span_note(
+                            span,
+                            "which contains a `build_error` reference that is not optimized out",
+                        );
+                    }
                 };
-
-                match reconstruct_span {
-                    Ok(mut span) => {
-                        let mut site_recovered = false;
-                        let used_items = usage_map.used_item(*mono);
-                        for used_item in used_items {
-                            if used_item.node.symbol_name(tcx).name == "rust_build_error" {
-                                if super::reconstruct::recover_span(span, used_item.span) {
-                                    span = used_item.span;
-                                    site_recovered = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if site_recovered {
-                            diag.span_note(span, "invocation happens here");
-                        } else {
-                            diag.span_note(span, "invocation happens here, in an inlined function");
-                        }
-                    }
-                    Err(err) => {
-                        diag.note(format!(
-                            "attempt to reconstruct source information from DWARF failed: {err}"
-                        ));
-                    }
+                if let Err(err) = result {
+                    diag.note(format!(
+                        "attempt to reconstruct line information from DWARF failed: {err}"
+                    ));
                 }
 
                 diag.emit();

@@ -1,9 +1,13 @@
 use std::borrow::Cow;
 use std::num::NonZero;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gimli::{Dwarf, EndianSlice, LineProgramHeader, LineRow, Reader, RelocateReader, Unit};
+use gimli::{
+    AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, LineProgramHeader, LineRow,
+    Reader, RelocateReader, Unit,
+};
 use object::{
     Endian, File, Object, ObjectSection, ObjectSymbol, Relocation, RelocationKind,
     RelocationTarget, Section, SectionIndex,
@@ -208,10 +212,18 @@ pub struct DwarfLoader<'file, 'data> {
     dwarf_sections: Arc<gimli::DwarfSections<SectionWithReloc<'file, 'data>>>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Location {
     pub file: PathBuf,
     pub line: u64,
     pub column: u64,
+}
+
+#[derive(Debug)]
+pub struct Call {
+    pub caller: String,
+    pub callee: String,
+    pub location: Option<Location>,
 }
 
 impl<'file, 'data> DwarfLoader<'file, 'data> {
@@ -241,6 +253,253 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
             dwarf: dwarf_transmute,
             dwarf_sections,
         })
+    }
+
+    /// Obtain the linkage name of a subprogram or inlined subroutine.
+    fn linkage_name(
+        &self,
+        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
+        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_, 'file, 'data>>,
+    ) -> Result<String, Error> {
+        let mut attrs = die.attrs();
+        let mut name = None;
+        let mut deleg = None;
+
+        while let Some(attr) = attrs.next()? {
+            match attr.name() {
+                gimli::DW_AT_linkage_name => {
+                    return Ok(self
+                        .dwarf
+                        .attr_string(unit, attr.value())?
+                        .to_string()?
+                        .into_owned());
+                }
+
+                gimli::DW_AT_name => {
+                    name = Some(
+                        self.dwarf
+                            .attr_string(unit, attr.value())?
+                            .to_string()?
+                            .into_owned(),
+                    );
+                }
+
+                gimli::DW_AT_abstract_origin | gimli::DW_AT_specification => {
+                    // Delegation
+                    deleg = Some(attr.value());
+                }
+
+                _ => (),
+            }
+        }
+
+        if let Some(name) = name {
+            return Ok(name);
+        }
+
+        let Some(refer) = deleg else {
+            Err(Error::UnexpectedDwarf(
+                "Cannot find name for DW_TAG_subprogram",
+            ))?
+        };
+
+        match refer {
+            AttributeValue::UnitRef(offset) => {
+                let mut entries = unit.entries_at_offset(offset)?;
+                entries
+                    .next_entry()?
+                    .ok_or(Error::UnexpectedDwarf("Referenced entry not found"))?;
+
+                let next_die = entries.current().unwrap();
+                return self.linkage_name(unit, next_die);
+            }
+
+            _ => Err(Error::UnexpectedDwarf("Unsupported reference type"))?,
+        }
+    }
+
+    /// Obtain PC ranges related to a DIE.
+    fn ranges(
+        &self,
+        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
+        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_, 'file, 'data>>,
+    ) -> Result<(SectionIndex, Vec<Range<i64>>), Error> {
+        let mut ranges = Vec::new();
+
+        let mut attrs = die.attrs();
+        while let Some(attr) = attrs.next()? {
+            match attr.name() {
+                gimli::DW_AT_low_pc => {
+                    let Some(low_pc) = self.dwarf.attr_address(&unit, attr.value())? else {
+                        Err(Error::UnexpectedDwarf("DW_AT_low_pc is not an address"))?
+                    };
+
+                    let Some(high_pc) = die.attr_value(gimli::DW_AT_high_pc)? else {
+                        Err(Error::UnexpectedDwarf(
+                            "DW_AT_high_pc not found at DW_TAG_inlined_subroutine",
+                        ))?
+                    };
+
+                    let Some(high_pc) = high_pc.udata_value() else {
+                        Err(Error::UnexpectedDwarf("DW_AT_high_pc is not udata"))?
+                    };
+
+                    ranges.push((low_pc, high_pc));
+                }
+
+                // This is handled by DW_AT_low_pc.
+                gimli::DW_AT_high_pc => (),
+
+                gimli::DW_AT_ranges => {
+                    let AttributeValue::DebugRngListsIndex(offset) = attr.value() else {
+                        dbg!(attr);
+                        Err(Error::UnexpectedDwarf(
+                            "DW_AT_ranges is not rnglist reference",
+                        ))?
+                    };
+
+                    let offset = self.dwarf.ranges_offset(unit, offset)?;
+                    let mut range = self.dwarf.ranges(unit, offset)?;
+                    while let Some(range) = range.next()? {
+                        ranges.push((range.begin, range.end.wrapping_sub(range.begin)));
+                    }
+                }
+
+                _ => (),
+            }
+        }
+
+        if ranges.is_empty() {
+            return Ok((SectionIndex(0), Vec::new()));
+        }
+
+        let encoded_section = decode_address(ranges[0].0).0;
+
+        let ranges = ranges
+            .into_iter()
+            .map(|(begin, len)| {
+                let (sec, begin) = decode_address(begin);
+                if sec != encoded_section {
+                    return Err(Error::UnexpectedDwarf(
+                        "Single DIE covers multiple sections",
+                    ));
+                }
+
+                Ok(begin..begin.wrapping_add(len as _))
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok((encoded_section, ranges))
+    }
+
+    fn call_location(
+        &self,
+        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
+        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_, 'file, 'data>>,
+    ) -> Result<Option<Location>, Error> {
+        let Some(file) = die.attr(gimli::DW_AT_call_file)? else {
+            // This may happen when two calls from different files are merged.
+            return Ok(None);
+        };
+
+        let file = self.file_name(
+            unit,
+            unit.line_program
+                .as_ref()
+                .ok_or(Error::UnexpectedDwarf("line number table not present"))?
+                .header(),
+            file.udata_value()
+                .ok_or(Error::UnexpectedDwarf("file number is not udata"))?,
+        )?;
+
+        let Some(line) = die.attr(gimli::DW_AT_call_line)? else {
+            // This may happen when two calls from different lines are merged.
+            return Ok(None);
+        };
+        let line = line
+            .udata_value()
+            .ok_or(Error::UnexpectedDwarf("line number is not udata"))?;
+
+        let column = match die.attr(gimli::DW_AT_call_column)? {
+            None => 0,
+            Some(column) => column
+                .udata_value()
+                .ok_or(Error::UnexpectedDwarf("column number is not udata"))?,
+        };
+
+        Ok(Some(Location { file, line, column }))
+    }
+
+    pub fn inline_info<'tcx>(
+        &self,
+        section_index: SectionIndex,
+        offset: u64,
+    ) -> Result<Vec<Call>, Error> {
+        let mut iter = self.dwarf.units();
+        let mut callstack = Vec::<Call>::new();
+
+        while let Some(header) = iter.next()? {
+            let unit = self.dwarf.unit(header)?;
+
+            let mut stack = Vec::new();
+            let mut entries = unit.entries();
+            while let Some((depth, die)) = entries.next_dfs()? {
+                for _ in depth..=0 {
+                    stack.pop();
+                }
+
+                if matches!(
+                    die.tag(),
+                    gimli::DW_TAG_subprogram | gimli::DW_TAG_inlined_subroutine
+                ) {
+                    stack.push(Some(self.linkage_name(&unit, die)?));
+                } else {
+                    stack.push(None);
+                }
+
+                if die.tag() != gimli::DW_TAG_inlined_subroutine {
+                    continue;
+                }
+
+                let ranges = self.ranges(&unit, die)?;
+                if ranges.0 != section_index {
+                    continue;
+                }
+
+                if ranges
+                    .1
+                    .iter()
+                    .any(|range| range.contains(&(offset as i64)))
+                {
+                    let callee = stack.last().unwrap().as_ref().unwrap();
+                    let caller = stack
+                        .iter()
+                        .rev()
+                        .skip(1)
+                        .find(|x| x.is_some())
+                        .and_then(|x| x.as_ref())
+                        .ok_or(Error::UnexpectedDwarf(
+                            "DW_TAG_inlined_subroutine is not nested inside DW_TAG_subprogram",
+                        ))?;
+
+                    // Call stack must form a chain.
+                    if let Some(last_call) = callstack.last() {
+                        if last_call.callee != *caller {
+                            Err(Error::UnexpectedDwarf("Inlined call does not form a chain"))?
+                        }
+                    }
+
+                    let location = self.call_location(&unit, die)?;
+                    callstack.push(Call {
+                        caller: caller.clone(),
+                        callee: callee.clone(),
+                        location,
+                    });
+                }
+            }
+        }
+
+        Ok(callstack)
     }
 
     fn file_name(
