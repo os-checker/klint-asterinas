@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::any::{Any, TypeId};
-use std::cell::RefCell;
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::sync::{DynSend, DynSync, MTLock, RwLock};
 use rustc_hir::def_id::{CrateNum, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
@@ -18,8 +18,8 @@ use crate::preempt_count::UseSite;
 pub(crate) trait Query: 'static {
     const NAME: &'static str;
 
-    type Key<'tcx>;
-    type Value<'tcx>;
+    type Key<'tcx>: DynSend + DynSync;
+    type Value<'tcx>: DynSend + DynSync;
 }
 
 pub(crate) trait QueryValueDecodable: Query {
@@ -50,12 +50,16 @@ pub(crate) trait PersistentQuery: QueryValueDecodable {
 
 pub struct AnalysisCtxt<'tcx> {
     pub tcx: TyCtxt<'tcx>,
-    pub local_conn: Connection,
-    pub sql_conn: RefCell<FxHashMap<CrateNum, Option<Arc<Connection>>>>,
+    pub local_conn: MTLock<Connection>,
+    pub sql_conn: RwLock<FxHashMap<CrateNum, Option<Arc<MTLock<Connection>>>>>,
 
-    pub call_stack: RefCell<Vec<UseSite<'tcx>>>,
-    pub query_cache: RefCell<FxHashMap<TypeId, Arc<dyn Any>>>,
+    pub call_stack: RwLock<Vec<UseSite<'tcx>>>,
+    pub query_cache: RwLock<FxHashMap<TypeId, Arc<dyn Any + DynSend + DynSync>>>,
 }
+
+// Everything in `AnalysisCtxt` is either `DynSend/DynSync` or `Send/Sync`, but since there're no relation between two right now compiler cannot infer this.
+unsafe impl<'tcx> DynSend for AnalysisCtxt<'tcx> {}
+unsafe impl<'tcx> DynSync for AnalysisCtxt<'tcx> {}
 
 impl<'tcx> std::ops::Deref for AnalysisCtxt<'tcx> {
     type Target = TyCtxt<'tcx>;
@@ -105,7 +109,7 @@ const SCHEMA_VERSION: u32 = 1;
 
 impl Drop for AnalysisCtxt<'_> {
     fn drop(&mut self) {
-        self.local_conn.execute("commit", ()).unwrap();
+        self.local_conn.lock().execute("commit", ()).unwrap();
     }
 }
 
@@ -127,26 +131,26 @@ impl ArcDowncast for Arc<dyn Any> {
 impl<'tcx> AnalysisCtxt<'tcx> {
     pub(crate) fn query_cache<Q: Query>(
         &self,
-    ) -> Arc<RefCell<FxHashMap<Q::Key<'tcx>, Q::Value<'tcx>>>> {
+    ) -> Arc<RwLock<FxHashMap<Q::Key<'tcx>, Q::Value<'tcx>>>> {
         let key = TypeId::of::<Q>();
         let mut guard = self.query_cache.borrow_mut();
-        let cache = guard
+        let cache = (guard
             .entry(key)
             .or_insert_with(|| {
-                let cache = Arc::new(RefCell::new(
+                let cache = Arc::new(RwLock::new(
                     FxHashMap::<Q::Key<'static>, Q::Value<'static>>::default(),
                 ));
                 cache
             })
-            .clone()
-            .downcast::<RefCell<FxHashMap<Q::Key<'static>, Q::Value<'static>>>>()
+            .clone() as Arc<dyn Any>)
+            .downcast::<RwLock<FxHashMap<Q::Key<'static>, Q::Value<'static>>>>()
             .unwrap();
         // Everything stored inside query_cache is conceptually `'tcx`, but due to limitation
         // of `Any` we hack around the lifetime.
         unsafe { std::mem::transmute(cache) }
     }
 
-    pub(crate) fn sql_connection(&self, cnum: CrateNum) -> Option<Arc<Connection>> {
+    pub(crate) fn sql_connection(&self, cnum: CrateNum) -> Option<Arc<MTLock<Connection>>> {
         if let Some(v) = self.sql_conn.borrow().get(&cnum) {
             return v.clone();
         }
@@ -187,7 +191,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                     );
                 }
 
-                result = Some(Arc::new(conn));
+                result = Some(Arc::new(MTLock::new(conn)));
                 break;
             }
         }
@@ -205,6 +209,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub(crate) fn sql_create_table<Q: Query>(&self) {
         self.local_conn
+            .lock()
             .execute_batch(&format!(
                 "CREATE TABLE {} (key BLOB PRIMARY KEY, value BLOB);",
                 Q::NAME
@@ -225,6 +230,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
         let value_encoded: Vec<u8> = self
             .sql_connection(cnum)?
+            .lock()
             .query_row(
                 &format!("SELECT value FROM {} WHERE key = ?", Q::NAME),
                 rusqlite::params![encoded],
@@ -265,6 +271,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         let value_encoded = encode_ctx.finish();
 
         self.local_conn
+            .lock()
             .execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (key, value) VALUES (?, ?)",
@@ -309,7 +316,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
         let ret = Self {
             tcx,
-            local_conn: conn,
+            local_conn: MTLock::new(conn),
             sql_conn: Default::default(),
             call_stack: Default::default(),
             query_cache: Default::default(),

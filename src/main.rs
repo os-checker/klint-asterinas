@@ -48,6 +48,8 @@ use rustc_session::EarlyDiagCtxt;
 use rustc_session::config::ErrorOutputType;
 use std::sync::atomic::Ordering;
 
+use crate::ctxt::AnalysisCtxt;
+
 #[macro_use]
 mod ctxt;
 
@@ -78,14 +80,16 @@ impl Callbacks for MyCallbacks {
         config.override_queries = Some(|_, provider| {
             // Calling `optimized_mir` will steal the result of query `mir_drops_elaborated_and_const_checked`,
             // so hijack `optimized_mir` to run `analysis_mir` first.
-            hook_query!(provider.optimized_mir => |tcx, def_id, original| {
+            hook_query!(provider.optimized_mir => |tcx, local_def_id, original| {
+                let def_id = local_def_id.to_def_id();
                 // Skip `analysis_mir` call if this is a constructor, since it will be delegated back to
                 // `optimized_mir` for building ADT constructor shim.
-                if !tcx.is_constructor(def_id.to_def_id()) {
-                    crate::mir::local_analysis_mir(tcx, def_id);
+                if !tcx.is_constructor(def_id) {
+                    let cx = crate::driver::cx::<MyCallbacks>(tcx);
+                    let _ = cx.analysis_mir(def_id);
                 }
 
-                original(tcx, def_id)
+                original(tcx, local_def_id)
             });
         });
         config.register_lints = Some(Box::new(move |_, lint_store| {
@@ -94,16 +98,20 @@ impl Callbacks for MyCallbacks {
             lint_store.register_lints(&[&atomic_context::ATOMIC_CONTEXT]);
             // lint_store
             //     .register_late_pass(|_| Box::new(infallible_allocation::InfallibleAllocation));
-            lint_store.register_late_pass(|tcx| Box::new(atomic_context::AtomicContext::new(tcx)));
+            lint_store.register_late_pass(|tcx| {
+                Box::new(atomic_context::AtomicContext {
+                    cx: driver::cx::<MyCallbacks>(tcx),
+                })
+            });
         }));
     }
 }
 
 impl driver::CallbacksExt for MyCallbacks {
-    type ExtCtxt<'tcx> = TyCtxt<'tcx>;
+    type ExtCtxt<'tcx> = AnalysisCtxt<'tcx>;
 
     fn ext_cx<'tcx>(&mut self, tcx: TyCtxt<'tcx>) -> Self::ExtCtxt<'tcx> {
-        tcx
+        AnalysisCtxt::new(tcx)
     }
 }
 
