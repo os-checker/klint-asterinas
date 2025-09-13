@@ -43,6 +43,7 @@ extern crate rustc_trait_selection;
 
 use rustc_driver::Callbacks;
 use rustc_interface::interface::Config;
+use rustc_middle::ty::TyCtxt;
 use rustc_session::EarlyDiagCtxt;
 use rustc_session::config::ErrorOutputType;
 use std::sync::atomic::Ordering;
@@ -98,7 +99,13 @@ impl Callbacks for MyCallbacks {
     }
 }
 
-impl driver::CallbacksExt for MyCallbacks {}
+impl driver::CallbacksExt for MyCallbacks {
+    type ExtCtxt<'tcx> = TyCtxt<'tcx>;
+
+    fn ext_cx<'tcx>(&mut self, tcx: TyCtxt<'tcx>) -> Self::ExtCtxt<'tcx> {
+        tcx
+    }
+}
 
 fn main() {
     let handler = EarlyDiagCtxt::new(ErrorOutputType::default());

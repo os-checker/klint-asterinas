@@ -1,11 +1,12 @@
 //! Contains hacks that changes the flow of compiler.
 
 use std::any::Any;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CodegenResults, TargetConfig};
-use rustc_data_structures::fx::FxIndexMap;
+use rustc_data_structures::fx::{FxHashMap, FxIndexMap};
+use rustc_data_structures::sync::{DynSend, DynSync};
 use rustc_driver::{Callbacks, Compilation};
 use rustc_interface::Config;
 use rustc_interface::interface::Compiler;
@@ -18,8 +19,17 @@ use rustc_session::config::{Options, OutputFilenames, PrintRequest};
 use rustc_session::{EarlyDiagCtxt, Session};
 
 pub trait CallbacksExt: Callbacks + Send + 'static {
-    fn after_codegen<'tcx>(&mut self, _tcx: TyCtxt<'tcx>) {}
+    type ExtCtxt<'tcx>: DynSend + DynSync;
+
+    /// Create a new context that extends `TyCtxt`.
+    fn ext_cx<'tcx>(&mut self, _tcx: TyCtxt<'tcx>) -> Self::ExtCtxt<'tcx>;
+
+    fn after_codegen<'tcx>(&mut self, _cx: &'tcx Self::ExtCtxt<'tcx>) {}
 }
+
+/// Mapping from `TyCtxt<'tcx>` to `Ctxt<'tcx>`.
+static TCX_EXT_MAP: LazyLock<Mutex<FxHashMap<usize, Box<dyn Any + Send + Sync>>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
 
 struct CallbackWrapper<C> {
     callback: Arc<Mutex<C>>,
@@ -73,7 +83,26 @@ impl<C: CallbacksExt> Callbacks for CallbackWrapper<C> {
     }
 
     fn after_expansion<'tcx>(&mut self, compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
-        self.callback.lock().unwrap().after_expansion(compiler, tcx)
+        let mut callback = self.callback.lock().unwrap();
+
+        // This is the first opportunity that we've got a `tcx`.
+        // Register the extension here.
+        let cx = Box::new(callback.ext_cx(tcx));
+
+        // SAFETY: this is a lifetime extension needed to store it into our hashmap.
+        // This can be obtained by `cx` function below, which would give it a lifetime of `'tcx`.
+        //
+        // We use a hook to destroy this before `TyCtxt<'tcx>` is gone in `codegen_crate`. That is
+        // the very last function to execute before `TyCtxt::finish` (assuming that no providers hook into it...)
+        let cx_lifetime_ext: Box<C::ExtCtxt<'static>> = unsafe { std::mem::transmute(cx) };
+        let cx_dyn: Box<dyn Any> = cx_lifetime_ext;
+        // SAFETY: horrible trick to make this actually `Sync`. However this will not actually be used
+        // in another thread unless `TyCtxt` is `Sync` and `DynSync` is indeed `Sync`.
+        let cx_sync: Box<dyn Any + Send + Sync> = unsafe { std::mem::transmute(cx_dyn) };
+        let tcx_addr = *tcx as *const _ as usize;
+        TCX_EXT_MAP.lock().unwrap().insert(tcx_addr, cx_sync);
+
+        callback.after_expansion(compiler, tcx)
     }
 
     fn after_analysis<'tcx>(&mut self, compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
@@ -97,7 +126,21 @@ impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
         let (cg, work_map) = self
             .backend
             .join_codegen(ongoing_codegen, tcx.sess, outputs);
-        self.callback.lock().unwrap().after_codegen(tcx);
+
+        // `tcx` is going to destroyed. Let's get back the copy.
+        let tcx_addr = *tcx as *const _ as usize;
+        let cx = TCX_EXT_MAP.lock().unwrap().remove(&tcx_addr).unwrap();
+        assert!(cx.is::<C::ExtCtxt<'static>>());
+        // SAFETY: we just check the (type-erased) type matches.
+        let cx = unsafe { Box::from_raw(Box::into_raw(cx) as *mut C::ExtCtxt<'tcx>) };
+
+        // SAFETY: one last lifetime extension just to make the signature nice.
+        // This is fine as `tcx` is going to be destroyed.
+        self.callback
+            .lock()
+            .unwrap()
+            .after_codegen(unsafe { &*&raw const *cx });
+
         Box::new((cg, work_map))
     }
 
@@ -156,6 +199,16 @@ pub fn run_compiler<C: CallbacksExt>(at_args: &[String], callback: C) {
             callback: Arc::new(Mutex::new(callback)),
         },
     );
+}
+
+/// Obtain an extended context from `TyCtxt`.
+pub fn cx<'tcx, C: CallbacksExt>(tcx: TyCtxt<'tcx>) -> &'tcx C::ExtCtxt<'tcx> {
+    let tcx_addr = *tcx as *const _ as usize;
+    let guard = TCX_EXT_MAP.lock().unwrap();
+    let cx = guard.get(&tcx_addr).unwrap();
+    assert!(cx.is::<C::ExtCtxt<'static>>());
+    // SAFETY: we have checked that the type actually matches.
+    unsafe { &*(&raw const **cx as *const C::ExtCtxt<'tcx>) }
 }
 
 #[macro_export]
