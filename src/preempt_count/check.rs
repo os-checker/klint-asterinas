@@ -14,8 +14,10 @@ use rustc_middle::ty::{
 };
 use rustc_span::{DUMMY_SP, Span};
 
-use super::{Error, PolyDisplay, UseSite, UseSiteKind};
+use super::Error;
 use crate::ctxt::AnalysisCtxt;
+use crate::diagnostic::PolyDisplay;
+use crate::diagnostic::use_stack::{UseSite, UseSiteKind};
 
 struct MirNeighborVisitor<'mir, 'tcx, 'cx> {
     cx: &'cx AnalysisCtxt<'tcx>,

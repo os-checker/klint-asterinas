@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed, MultiSpan};
+use rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed};
 use rustc_hir::LangItem;
-use rustc_hir::def_id::{CrateNum, DefId};
+use rustc_hir::def_id::CrateNum;
 use rustc_middle::mir::{Body, TerminatorKind, UnwindAction};
 use rustc_middle::ty::{
     self, GenericArgs, Instance, PseudoCanonicalInput, Ty, TypingEnv, TypingMode,
@@ -15,9 +15,10 @@ use rustc_mir_dataflow::lattice::FlatSet;
 use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::TyCtxtInferExt;
 
+use super::Error;
 use super::dataflow::{AdjustmentComputation, MaybeError};
-use super::{Error, PolyDisplay, UseSiteKind};
 use crate::ctxt::AnalysisCtxt;
+use crate::diagnostic::PolyDisplay;
 
 impl<'tcx> AnalysisCtxt<'tcx> {
     fn drop_adjustment_overflow(
@@ -31,89 +32,21 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         Err(Error::Error(self.emit_with_use_site_info(diag)))
     }
 
-    fn poly_instance_of_def_id(&self, def_id: DefId) -> PseudoCanonicalInput<'tcx, Instance<'tcx>> {
-        let poly_typing_env = TypingEnv::post_analysis(self.tcx, def_id);
-        let poly_args =
-            self.erase_and_anonymize_regions(GenericArgs::identity_for_item(self.tcx, def_id));
-        poly_typing_env.as_query_input(Instance::new_raw(def_id, poly_args))
-    }
-
     pub fn emit_with_use_site_info<G: EmissionGuarantee>(
         &self,
         mut diag: Diag<'tcx, G>,
     ) -> G::EmitResult {
         let call_stack = self.call_stack.borrow();
-
-        let mut limit = usize::MAX;
-        if !self.recursion_limit().value_within_limit(call_stack.len()) {
+        if call_stack.len() > 4 && !self.recursion_limit().value_within_limit(call_stack.len()) {
             // This is recursion limit overflow, we don't want to spam the screen
-            limit = 1;
-        }
-        let mut call_stack_pos = call_stack.len();
-
-        while call_stack_pos > 0 {
-            let site = &call_stack[call_stack_pos - 1];
-
-            if limit == 0 {
-                limit = call_stack_pos.min(2);
-                if call_stack_pos > limit {
-                    diag.note(format!(
-                        "{} calls omitted due to recursion",
-                        call_stack_pos - limit
-                    ));
-                }
-                call_stack_pos = limit;
-                continue;
-            }
-
-            match &site.kind {
-                UseSiteKind::Call(span) => {
-                    if diag.span.is_dummy() {
-                        diag.span(*span);
-                    } else {
-                        diag.span_note(*span, "which is called from here");
-                        limit -= 1;
-                    }
-                }
-                UseSiteKind::Drop {
-                    drop_span,
-                    place_span,
-                } => {
-                    let mut multispan = MultiSpan::from_span(*drop_span);
-                    multispan.push_span_label(*place_span, "value being dropped is here");
-                    if diag.span.is_dummy() {
-                        diag.span(multispan);
-                    } else {
-                        diag.span_note(multispan, "which is dropped here");
-                        limit -= 1;
-                    }
-                }
-                UseSiteKind::PointerCoercion(span) => {
-                    if diag.span.is_dummy() {
-                        diag.span(*span);
-                    } else {
-                        diag.span_note(*span, "which is used as a pointer here");
-                        limit -= 1;
-                    }
-                }
-                UseSiteKind::Vtable(span) => {
-                    if diag.span.is_dummy() {
-                        diag.span(*span);
-                    } else {
-                        diag.span_note(*span, "which is used as a vtable here");
-                        limit -= 1;
-                    }
-                }
-            }
-            let def_id = site.instance.value.def_id();
-            if self.poly_instance_of_def_id(def_id) != site.instance {
-                diag.note(format!(
-                    "instance being checked is `{}`",
-                    PolyDisplay(&site.instance)
-                ));
-            }
-
-            call_stack_pos -= 1;
+            self.note_use_stack(&mut diag, &call_stack[call_stack.len() - 2..]);
+            diag.note(format!(
+                "{} calls omitted due to recursion",
+                call_stack.len() - 4
+            ));
+            self.note_use_stack(&mut diag, &call_stack[..2]);
+        } else {
+            self.note_use_stack(&mut diag, &call_stack);
         }
 
         diag.emit()

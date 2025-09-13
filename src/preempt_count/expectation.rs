@@ -14,8 +14,10 @@ use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::TyCtxtInferExt;
 
 use super::dataflow::AdjustmentComputation;
-use super::{Error, ExpectationRange, PolyDisplay, UseSite, UseSiteKind};
+use super::{Error, ExpectationRange};
 use crate::ctxt::AnalysisCtxt;
+use crate::diagnostic::PolyDisplay;
+use crate::diagnostic::use_stack::{UseSite, UseSiteKind};
 use crate::lattice::MeetSemiLattice;
 
 impl<'tcx> AnalysisCtxt<'tcx> {

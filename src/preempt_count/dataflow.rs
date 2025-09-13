@@ -8,8 +8,9 @@ use rustc_mir_dataflow::JoinSemiLattice;
 use rustc_mir_dataflow::lattice::FlatSet;
 use rustc_mir_dataflow::{Analysis, fmt::DebugWithContext};
 
-use super::{Error, UseSite, UseSiteKind};
+use super::Error;
 use crate::ctxt::AnalysisCtxt;
+use crate::diagnostic::use_stack::{UseSite, UseSiteKind};
 
 /// A result type that can be used as lattice.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

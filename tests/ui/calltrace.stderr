@@ -12,7 +12,7 @@ note: which is called from here
    |
 23 |     problematic(x);
    |     ^^^^^^^^^^^^^^
-   = note: instance being checked is `wrapper::<LockOnDrop>`
+   = note: inside instance `wrapper::<LockOnDrop>`
 note: which is called from here
   --> $DIR/calltrace.rs:31:5
    |

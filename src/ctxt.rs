@@ -13,7 +13,7 @@ use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
 use rustc_span::{DUMMY_SP, Span};
 
-use crate::preempt_count::UseSite;
+use crate::diagnostic::use_stack::UseSite;
 
 pub(crate) trait Query: 'static {
     const NAME: &'static str;

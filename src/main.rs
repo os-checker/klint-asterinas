@@ -55,6 +55,7 @@ mod ctxt;
 
 mod atomic_context;
 mod attribute;
+mod diagnostic;
 mod driver;
 mod infallible_allocation;
 mod lattice;
