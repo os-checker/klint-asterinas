@@ -21,3 +21,15 @@ fn e() {}
 
 #[klint::preempt_count(unchecked)]
 fn f() {}
+
+#[klint::any_context]
+fn g() {}
+
+#[klint::atomic_context]
+fn h() {}
+
+#[klint::atomic_context_only]
+fn i() {}
+
+#[klint::process_context]
+fn j() {}
