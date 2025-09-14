@@ -126,7 +126,7 @@ impl driver::CallbacksExt for MyCallbacks {
     fn after_codegen<'tcx>(&mut self, cx: &'tcx AnalysisCtxt<'tcx>) {
         let outputs = cx.output_filenames(());
         if outputs.outputs.contains_key(&OutputType::Object) {
-            binary_analysis::binary_analysis(cx.tcx, outputs.path(OutputType::Object).as_path());
+            binary_analysis::binary_analysis(cx, outputs.path(OutputType::Object).as_path());
         }
     }
 }

@@ -1,7 +1,10 @@
 use object::{File, Object, ObjectSection, ObjectSymbol, RelocationTarget};
 use rustc_middle::mir::mono::MonoItem;
-use rustc_middle::ty::{Instance, TyCtxt};
+use rustc_middle::ty::{Instance, TypingEnv};
 use rustc_span::Span;
+
+use crate::ctxt::AnalysisCtxt;
+use crate::diagnostic::use_stack::{UseSite, UseSiteKind};
 
 #[derive(Diagnostic)]
 #[diag(klint_build_error_referenced_without_symbol)]
@@ -14,15 +17,20 @@ struct BuildErrorReferencedWithoutInstance<'a> {
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_build_error_referenced)]
-struct BuildErrorReferenced<'tcx> {
+#[diag(klint_build_error_referenced_without_debug)]
+struct BuildErrorReferencedWithoutDebug<'tcx> {
     #[primary_span]
     pub span: Span,
     pub kind: &'static str,
     pub instance: Instance<'tcx>,
+    pub err: String,
 }
 
-pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
+#[derive(Diagnostic)]
+#[diag(klint_build_error_referenced)]
+struct BuildErrorReferenced;
+
+pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'obj>) {
     let Some(build_error_symbol) = file.symbol_by_name("rust_build_error") else {
         // This object file contains no reference to `build_error`, all good!
         return;
@@ -41,7 +49,7 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
 
     // Collect all mono items, which we will use to find out which symbol is problematic.
     let mono_items = crate::monomorphize_collector::collect_crate_mono_items(
-        tcx,
+        cx.tcx,
         crate::monomorphize_collector::MonoItemCollectionStrategy::Lazy,
     )
     .0;
@@ -49,47 +57,34 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
     for section in file.sections() {
         for (offset, relocation) in section.relocations() {
             if relocation.target() == relo_target_needle {
-                // Found a relocation that points to `build_error`. Emit and error.
+                // Found a relocation that points to `build_error`. Emit an error.
                 let Some((symbol, _)) =
                     super::find_symbol_from_section_offset(file, &section, offset)
                 else {
-                    tcx.dcx().emit_err(BuildErrorReferencedWithoutSymbol);
+                    cx.dcx().emit_err(BuildErrorReferencedWithoutSymbol);
                     continue;
                 };
 
                 let Some(mono) = mono_items
                     .iter()
-                    .find(|item| item.symbol_name(tcx).name == symbol)
+                    .find(|item| item.symbol_name(cx.tcx).name == symbol)
                 else {
-                    tcx.dcx()
+                    cx.dcx()
                         .emit_err(BuildErrorReferencedWithoutInstance { symbol });
                     continue;
                 };
 
-                let mut diag = tcx.dcx().create_err(match mono {
-                    MonoItem::Fn(instance) => BuildErrorReferenced {
-                        span: tcx.def_span(instance.def_id()),
-                        kind: "fn",
-                        instance: *instance,
-                    },
-                    MonoItem::Static(def_id) => BuildErrorReferenced {
-                        span: tcx.def_span(def_id),
-                        kind: "static",
-                        instance: Instance::mono(tcx, *def_id),
-                    },
-                    MonoItem::GlobalAsm(_) => {
-                        // We're not going to be covered by symbols inside global asm.
-                        bug!();
-                    }
-                });
-
                 let loader = super::dwarf::DwarfLoader::new(file)
                     .expect("DWARF loader creation should not fail");
+
+                let mut diag = cx.dcx().create_err(BuildErrorReferenced);
                 let mut frame = match mono {
-                    MonoItem::Fn(instance) => Some(*instance),
-                    _ => None,
+                    MonoItem::Fn(instance) => *instance,
+                    MonoItem::Static(def_id) => Instance::mono(cx.tcx, *def_id),
+                    MonoItem::GlobalAsm(_) => bug!(),
                 };
 
+                let mut recovered_call_stack = Vec::new();
                 let result: Result<_, super::dwarf::Error> = try {
                     let call_stack = loader.inline_info(section.index(), offset)?;
                     if let Some(first) = call_stack.first() {
@@ -100,16 +95,17 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
                         }
                     }
                     for call in call_stack {
-                        if let Some(caller) = frame.take() {
-                            if let Some((callee, span)) = super::reconstruct::recover_fn_call_span(
-                                tcx,
-                                caller,
-                                &call.callee,
-                                call.location.as_ref(),
-                            ) {
-                                frame = Some(callee);
-                                diag.span_note(span, format!("which calls `{callee}`"));
-                            }
+                        if let Some((callee, site)) = super::reconstruct::recover_fn_call_span(
+                            cx.tcx,
+                            frame,
+                            &call.callee,
+                            call.location.as_ref(),
+                        ) {
+                            recovered_call_stack.push(UseSite {
+                                instance: TypingEnv::fully_monomorphized().as_query_input(frame),
+                                kind: site,
+                            });
+                            frame = callee;
                         }
                     }
                 };
@@ -124,34 +120,60 @@ pub fn build_error_detection<'tcx, 'obj>(tcx: TyCtxt<'tcx>, file: &File<'obj>) {
                         super::dwarf::Error::UnexpectedDwarf("cannot find line number info"),
                     )?;
 
-                    if let Some(frame) = frame
-                        && let Some((_, span)) = super::reconstruct::recover_fn_call_span(
-                            tcx,
-                            frame,
-                            "rust_build_error",
-                            Some(&loc),
-                        )
-                    {
-                        diag.span_note(
-                            span,
-                            "which contains a `build_error` call that is not optimized out",
-                        );
+                    if let Some((_, site)) = super::reconstruct::recover_fn_call_span(
+                        cx.tcx,
+                        frame,
+                        "rust_build_error",
+                        Some(&loc),
+                    ) {
+                        recovered_call_stack.push(UseSite {
+                            instance: TypingEnv::fully_monomorphized().as_query_input(frame),
+                            kind: site,
+                        });
                     } else {
-                        let span = super::reconstruct::recover_span_from_line_no(tcx, &loc).ok_or(
-                            super::dwarf::Error::Other("cannot find file in compiler session"),
-                        )?;
-                        diag.span_note(
-                            span,
-                            "which contains a `build_error` reference that is not optimized out",
-                        );
+                        let span = super::reconstruct::recover_span_from_line_no(cx.tcx, &loc)
+                            .ok_or(super::dwarf::Error::Other(
+                                "cannot find file in compiler session",
+                            ))?;
+                        recovered_call_stack.push(UseSite {
+                            instance: TypingEnv::fully_monomorphized().as_query_input(frame),
+                            kind: UseSiteKind::Other(
+                                span,
+                                "which is referenced by this function".to_string(),
+                            ),
+                        })
                     }
                 };
                 if let Err(err) = result {
-                    diag.note(format!(
-                        "attempt to reconstruct line information from DWARF failed: {err}"
-                    ));
+                    diag.cancel();
+
+                    // If even line number cannot be recovered, emit a different diagnostic.
+                    cx.dcx().emit_err(match mono {
+                        MonoItem::Fn(instance) => BuildErrorReferencedWithoutDebug {
+                            span: cx.def_span(instance.def_id()),
+                            kind: "fn",
+                            instance: *instance,
+                            err: err.to_string(),
+                        },
+                        MonoItem::Static(def_id) => BuildErrorReferencedWithoutDebug {
+                            span: cx.def_span(def_id),
+                            kind: "static",
+                            instance: Instance::mono(cx.tcx, *def_id),
+                            err: err.to_string(),
+                        },
+                        MonoItem::GlobalAsm(_) => {
+                            // We're not going to be covered by symbols inside global asm.
+                            bug!();
+                        }
+                    });
+                    continue;
                 }
 
+                cx.note_use_stack(&mut diag, &recovered_call_stack);
+                diag.span_note(
+                    cx.def_span(mono.def_id()),
+                    format!("reference contained in `{}`", mono),
+                );
                 diag.emit();
             }
         }

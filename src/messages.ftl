@@ -14,5 +14,9 @@ klint_build_error_referenced_without_symbol =
 klint_build_error_referenced_without_instance =
     symbol `{$symbol}` references `build_error` in the object file, but no associated instance is found
 
-klint_build_error_referenced =
+klint_build_error_referenced_without_debug =
     `{$kind} {$instance}` contains reference to `build_error`
+    .note = attempt to reconstruct line information from DWARF failed: {$err}
+
+klint_build_error_referenced =
+    this `build_error` reference is not optimized away
