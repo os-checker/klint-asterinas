@@ -818,7 +818,7 @@ memoize!(
                 .in_definition_order()
                 .find(|x| x.def_id == instance.def_id())
                 .unwrap()
-                .trait_item_def_id
+                .trait_item_def_id()
                 .unwrap();
             for ancestor in trait_def.ancestors(cx.tcx, impl_).unwrap() {
                 let Some(ancestor_item) = ancestor.item(cx.tcx, trait_item) else {

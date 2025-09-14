@@ -554,7 +554,7 @@ memoize!(
                             .in_definition_order()
                             .find(|x| x.def_id == instance.def_id())
                             .unwrap()
-                            .trait_item_def_id
+                            .trait_item_def_id()
                             .unwrap()
                     } else {
                         // `impl_of_assoc` returns `None` if this instance is from the default impl of a trait method.
