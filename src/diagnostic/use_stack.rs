@@ -4,9 +4,10 @@
 //! as some usage may be due to pointer coercion or static reference).
 
 use rustc_errors::{Diag, EmissionGuarantee, MultiSpan};
+use rustc_hir::LangItem;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::{GenericArgs, Instance, PseudoCanonicalInput, TypingEnv};
-use rustc_span::Span;
+use rustc_span::{Span, sym};
 
 use crate::ctxt::AnalysisCtxt;
 use crate::diagnostic::PolyDisplay;
@@ -93,6 +94,18 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         for site in use_stack.iter().rev() {
             if diag.span.is_dummy() {
                 diag.span = site.kind.multispan();
+                continue;
+            }
+
+            let def_id = site.instance.value.def_id();
+            if self.is_lang_item(def_id, LangItem::DropInPlace) {
+                let ty = site.instance.value.args[0];
+                diag.note(format!("which is called from drop glue of `{ty}`"));
+                continue;
+            }
+
+            // Hide `drop()` call from stack as it's mostly noise.
+            if self.is_diagnostic_item(sym::mem_drop, def_id) {
                 continue;
             }
 
