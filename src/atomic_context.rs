@@ -272,6 +272,9 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             | "raw_spin_unlock"
             | "raw_spin_unlock_irqrestore" => SPIN_UNLOCK,
 
+            // timekeeping.h
+            "ktime_get" => NO_ASSUMPTION,
+
             // uaccess.h
             // Userspace memory access might fault, and thus sleep.
             "copy_from_user" | "copy_to_user" | "clear_user" | "copy_from_iter"
