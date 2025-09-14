@@ -9,6 +9,8 @@
 // Used in monomorphize collector
 #![feature(impl_trait_in_assoc_type)]
 #![feature(once_cell_get_mut)]
+// Used in symbol.rs
+#![feature(macro_metavar_expr)]
 #![warn(rustc::internal)]
 
 #[macro_use]
@@ -77,6 +79,7 @@ struct MyCallbacks;
 impl Callbacks for MyCallbacks {
     fn config(&mut self, config: &mut Config) {
         config.locale_resources.push(crate::DEFAULT_LOCALE_RESOURCE);
+        config.extra_symbols = crate::symbol::EXTRA_SYMBOLS.to_owned();
 
         config.override_queries = Some(|_, provider| {
             // Calling `optimized_mir` will steal the result of query `mir_drops_elaborated_and_const_checked`,

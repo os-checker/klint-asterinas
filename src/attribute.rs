@@ -9,8 +9,8 @@ use rustc_ast::{DelimArgs, token};
 use rustc_errors::{Diag, ErrorGuaranteed};
 use rustc_hir::{AttrArgs, AttrItem, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
-use rustc_span::Span;
 use rustc_span::symbol::Ident;
+use rustc_span::{Span, sym};
 
 use crate::preempt_count::ExpectationRange;
 
@@ -361,9 +361,8 @@ impl<'tcx> AttrParser<'tcx> {
                 cursor,
                 |name| {
                     Ok(match name.name {
-                        v if v == *crate::symbol::adjust => true,
-                        v if v == *crate::symbol::expect => true,
-                        v if v == *crate::symbol::unchecked => false,
+                        crate::symbol::adjust | sym::expect => true,
+                        crate::symbol::unchecked => false,
                         _ => {
                             self.error(name.span, |diag| {
                                 diag.help(
@@ -375,17 +374,17 @@ impl<'tcx> AttrParser<'tcx> {
                 },
                 |name, mut cursor| {
                     match name.name {
-                        v if v == *crate::symbol::adjust => {
+                        crate::symbol::adjust => {
                             let v;
                             (v, cursor) = self.parse_i32(cursor)?;
                             adjustment = Some(v);
                         }
-                        v if v == *crate::symbol::expect => {
+                        sym::expect => {
                             let (lo, hi);
                             ((lo, hi), cursor) = self.parse_expectation_range(cursor)?;
                             expectation = Some(ExpectationRange { lo, hi });
                         }
-                        v if v == *crate::symbol::unchecked => {
+                        crate::symbol::unchecked => {
                             unchecked = true;
                         }
                         _ => unreachable!(),
@@ -413,7 +412,7 @@ impl<'tcx> AttrParser<'tcx> {
         let Attribute::Unparsed(item) = attr else {
             return None;
         };
-        if item.path.segments[0].name != *crate::symbol::klint {
+        if item.path.segments[0].name != crate::symbol::klint {
             return None;
         };
         if item.path.segments.len() != 2 {
@@ -424,16 +423,14 @@ impl<'tcx> AttrParser<'tcx> {
             return None;
         }
         match item.path.segments[1].name {
-            v if v == *crate::symbol::preempt_count => Some(KlintAttribute::PreemptionCount(
+            crate::symbol::preempt_count => Some(KlintAttribute::PreemptionCount(
                 self.parse_preempt_count(attr, item).ok()?,
             )),
-            v if v == *crate::symbol::drop_preempt_count => Some(
-                KlintAttribute::DropPreemptionCount(self.parse_preempt_count(attr, item).ok()?),
-            ),
-            v if v == *crate::symbol::report_preempt_count => {
-                Some(KlintAttribute::ReportPreeptionCount)
-            }
-            v if v == *crate::symbol::dump_mir => Some(KlintAttribute::DumpMir),
+            crate::symbol::drop_preempt_count => Some(KlintAttribute::DropPreemptionCount(
+                self.parse_preempt_count(attr, item).ok()?,
+            )),
+            crate::symbol::report_preempt_count => Some(KlintAttribute::ReportPreeptionCount),
+            crate::symbol::dump_mir => Some(KlintAttribute::DumpMir),
             _ => {
                 self.tcx.node_span_lint(
                     crate::INCORRECT_ATTRIBUTE,

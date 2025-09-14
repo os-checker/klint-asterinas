@@ -5,11 +5,22 @@
 #![allow(non_upper_case_globals)]
 
 use rustc_span::Symbol;
-use std::sync::LazyLock;
+use rustc_span::symbol::PREDEFINED_SYMBOLS_COUNT;
 
 macro_rules! def {
     ($($name: ident,)*) => {
-        $(pub static $name: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern(stringify!($name)));)*
+        pub const EXTRA_SYMBOLS: &[&str] = &[$(stringify!($name),)*];
+
+        $(pub const $name: Symbol = Symbol::new(PREDEFINED_SYMBOLS_COUNT + ${index()});)*
+
+        // Use two glob imports to ensure that there're no conflicts between symbols here and predefined symbols;
+        const _: () = {
+            #[expect(unused)]
+            use rustc_span::sym::*;
+            use crate::symbol::*;
+
+            $(const _: Symbol = $name;)*
+        };
     };
 }
 
@@ -20,13 +31,11 @@ def! {
     report_preempt_count,
     dump_mir,
     adjust,
-    expect,
     unchecked,
     error,
     write,
     Write,
     task,
-    Waker,
     wake,
     wake_by_ref,
     sort,

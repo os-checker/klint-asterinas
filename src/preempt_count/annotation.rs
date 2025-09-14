@@ -40,16 +40,13 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             if let Some(adt_def) = self_ty.skip_binder().ty_adt_def()
                 && let data = self.def_path(adt_def.did()).data
                 && data.len() == 3
-                && let DefPathData::TypeNs(task) = data[0].data
-                && task == *crate::symbol::task
-                && let DefPathData::TypeNs(wake) = data[1].data
-                && wake == *crate::symbol::wake
-                && let DefPathData::TypeNs(waker) = data[2].data
-                && waker == *crate::symbol::Waker
+                && let DefPathData::TypeNs(crate::symbol::task) = data[0].data
+                && let DefPathData::TypeNs(crate::symbol::wake) = data[1].data
+                && let DefPathData::TypeNs(sym::Waker) = data[2].data
             {
                 if fn_name == sym::clone
-                    || fn_name == *crate::symbol::wake
-                    || fn_name == *crate::symbol::wake_by_ref
+                    || fn_name == crate::symbol::wake
+                    || fn_name == crate::symbol::wake_by_ref
                 {
                     return PreemptionCount {
                         adjustment: Some(0),
@@ -65,10 +62,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         let data = self.def_path(def_id).data;
 
         if data.len() == 3
-            && let DefPathData::TypeNs(any) = data[0].data
-            && any == sym::any
-            && let DefPathData::TypeNs(any_trait) = data[1].data
-            && any_trait == sym::Any
+            && let DefPathData::TypeNs(sym::any) = data[0].data
+            && let DefPathData::TypeNs(sym::Any) = data[1].data
             && let DefPathData::ValueNs(_any_fn) = data[2].data
         {
             // This is a `core::any::Any::_` function.
@@ -80,10 +75,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         if data.len() == 3
-            && let DefPathData::TypeNs(error) = data[0].data
-            && error == *crate::symbol::error
-            && let DefPathData::TypeNs(error_trait) = data[1].data
-            && error_trait == sym::Error
+            && let DefPathData::TypeNs(crate::symbol::error) = data[0].data
+            && let DefPathData::TypeNs(sym::Error) = data[1].data
             && let DefPathData::ValueNs(_any_fn) = data[2].data
         {
             // This is a `core::error::Error::_` function.
@@ -109,10 +102,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             };
         }
         if data.len() == 3
-            && let DefPathData::TypeNs(fmt) = data[0].data
-            && fmt == sym::fmt
-            && let DefPathData::TypeNs(write) = data[1].data
-            && write == *crate::symbol::Write
+            && let DefPathData::TypeNs(sym::fmt) = data[0].data
+            && let DefPathData::TypeNs(crate::symbol::Write) = data[1].data
             && let DefPathData::ValueNs(_write_fn) = data[2].data
         {
             // This is a `core::fmt::Write::write_{str, char, fmt}` function.
@@ -123,10 +114,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             };
         }
         if data.len() == 2
-            && let DefPathData::TypeNs(fmt) = data[0].data
-            && fmt == sym::fmt
-            && let DefPathData::ValueNs(write) = data[1].data
-            && write == *crate::symbol::write
+            && let DefPathData::TypeNs(sym::fmt) = data[0].data
+            && let DefPathData::ValueNs(crate::symbol::write) = data[1].data
         {
             // This is `core::fmt::write` function, which uses function pointers internally.
             return PreemptionCount {
@@ -137,16 +126,11 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         if data.len() == 5
-            && let DefPathData::TypeNs(slice) = data[0].data
-            && slice == sym::slice
-            && let DefPathData::TypeNs(sort) = data[1].data
-            && sort == *crate::symbol::sort
-            && let DefPathData::TypeNs(unstable) = data[2].data
-            && unstable == sym::unstable
-            && let DefPathData::TypeNs(quicksort) = data[3].data
-            && quicksort == *crate::symbol::quicksort
-            && let DefPathData::ValueNs(partition) = data[4].data
-            && partition == *crate::symbol::partition
+            && let DefPathData::TypeNs(sym::slice) = data[0].data
+            && let DefPathData::TypeNs(crate::symbol::sort) = data[1].data
+            && let DefPathData::TypeNs(sym::unstable) = data[2].data
+            && let DefPathData::TypeNs(crate::symbol::quicksort) = data[3].data
+            && let DefPathData::ValueNs(crate::symbol::partition) = data[4].data
         {
             // HACK: `core::sort::unstable::quicksort::partition` uses a const fn to produce a
             // function pointer which is called at runtime. This means that it'll guarantee to be
