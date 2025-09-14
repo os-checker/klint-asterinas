@@ -92,11 +92,6 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         use_stack: &[UseSite<'tcx>],
     ) {
         for site in use_stack.iter().rev() {
-            if diag.span.is_dummy() {
-                diag.span = site.kind.multispan();
-                continue;
-            }
-
             let def_id = site.instance.value.def_id();
             if self.is_lang_item(def_id, LangItem::DropInPlace) {
                 let ty = site.instance.value.args[0];
@@ -109,28 +104,33 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 continue;
             }
 
-            match &site.kind {
-                UseSiteKind::Call(span) => {
-                    diag.span_note(*span, "which is called from here");
-                }
-                UseSiteKind::Drop {
-                    drop_span,
-                    place_span,
-                } => {
-                    let mut multispan = MultiSpan::from_span(*drop_span);
-                    multispan.push_span_label(*place_span, "value being dropped is here");
-                    diag.span_note(multispan, "which is dropped here");
-                }
-                UseSiteKind::PointerCoercion(span) => {
-                    diag.span_note(*span, "which is used as a pointer here");
-                }
-                UseSiteKind::Vtable(span) => {
-                    diag.span_note(*span, "which is used as a vtable here");
-                }
-                UseSiteKind::Other(span, other) => {
-                    diag.span_note(*span, other.clone());
+            if diag.span.is_dummy() {
+                diag.span = site.kind.multispan();
+            } else {
+                match &site.kind {
+                    UseSiteKind::Call(span) => {
+                        diag.span_note(*span, "which is called from here");
+                    }
+                    UseSiteKind::Drop {
+                        drop_span,
+                        place_span,
+                    } => {
+                        let mut multispan = MultiSpan::from_span(*drop_span);
+                        multispan.push_span_label(*place_span, "value being dropped is here");
+                        diag.span_note(multispan, "which is dropped here");
+                    }
+                    UseSiteKind::PointerCoercion(span) => {
+                        diag.span_note(*span, "which is used as a pointer here");
+                    }
+                    UseSiteKind::Vtable(span) => {
+                        diag.span_note(*span, "which is used as a vtable here");
+                    }
+                    UseSiteKind::Other(span, other) => {
+                        diag.span_note(*span, other.clone());
+                    }
                 }
             }
+
             if !self.is_fully_polymorphic(site.instance) {
                 diag.note(format!("inside instance `{}`", PolyDisplay(&site.instance)));
             }
