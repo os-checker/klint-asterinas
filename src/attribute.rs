@@ -423,6 +423,29 @@ impl<'tcx> AttrParser<'tcx> {
             return None;
         }
         match item.path.segments[1].name {
+            // Shorthands
+            crate::symbol::any_context | crate::symbol::atomic_context => {
+                Some(KlintAttribute::PreemptionCount(PreemptionCount {
+                    adjustment: None,
+                    expectation: Some(ExpectationRange::top()),
+                    unchecked: false,
+                }))
+            }
+            crate::symbol::atomic_context_only => {
+                Some(KlintAttribute::PreemptionCount(PreemptionCount {
+                    adjustment: None,
+                    expectation: Some(ExpectationRange { lo: 1, hi: None }),
+                    unchecked: false,
+                }))
+            }
+            crate::symbol::process_context => {
+                Some(KlintAttribute::PreemptionCount(PreemptionCount {
+                    adjustment: None,
+                    expectation: Some(ExpectationRange::single_value(0)),
+                    unchecked: false,
+                }))
+            }
+
             crate::symbol::preempt_count => Some(KlintAttribute::PreemptionCount(
                 self.parse_preempt_count(attr, item).ok()?,
             )),

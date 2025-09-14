@@ -41,4 +41,9 @@ def! {
     sort,
     quicksort,
     partition,
+
+    any_context,
+    atomic_context,
+    atomic_context_only,
+    process_context,
 }
