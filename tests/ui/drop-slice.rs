@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use alloc::boxed::Box;
+
 struct LockOnDrop;
 
 impl Drop for LockOnDrop {

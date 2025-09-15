@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use alloc::boxed::Box;
+
 #[klint::preempt_count(adjust = 1, unchecked)]
 fn spin_lock() {}
 

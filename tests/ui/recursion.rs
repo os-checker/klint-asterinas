@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 #[klint::preempt_count(expect = 0)]
 fn might_sleep() {}

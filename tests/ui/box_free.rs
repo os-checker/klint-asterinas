@@ -4,6 +4,7 @@
 
 #![feature(allocator_api)]
 
+use alloc::boxed::Box;
 use core::alloc::{AllocError, Allocator, Layout};
 use core::ptr::NonNull;
 

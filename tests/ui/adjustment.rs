@@ -21,6 +21,6 @@ impl Spinlock {
 fn test() {
     let lock = Spinlock;
     if true {
-        std::mem::forget(lock.lock());
+        core::mem::forget(lock.lock());
     }
 }

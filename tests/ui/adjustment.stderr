@@ -6,10 +6,10 @@ error: cannot infer preemption count adjustment at this point
    |     ^
    |
 note: preemption count adjustment is 1 after this
-  --> $DIR/adjustment.rs:24:26
+  --> $DIR/adjustment.rs:24:27
    |
-24 |         std::mem::forget(lock.lock());
-   |                          ^^^^^^^^^^^
+24 |         core::mem::forget(lock.lock());
+   |                           ^^^^^^^^^^^
 note: while preemption count adjustment is 0 after this
   --> $DIR/adjustment.rs:25:6
    |

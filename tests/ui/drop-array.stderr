@@ -1,41 +1,41 @@
  WARN klint::ctxt no klint metadata found for crate alloc
  WARN klint::ctxt no klint metadata found for crate core
 note: reporting preemption count for instance `drop_lock`
-  --> $DIR/drop-array.rs:27:1
+  --> $DIR/drop-array.rs:29:1
    |
-27 | fn drop_lock(x: Box<[LockOnDrop; 2]>) {}
+29 | fn drop_lock(x: Box<[LockOnDrop; 2]>) {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: adjustment is inferred to be 2
 
 note: reporting preemption count for instance `drop_lock`
-  --> $DIR/drop-array.rs:27:1
+  --> $DIR/drop-array.rs:29:1
    |
-27 | fn drop_lock(x: Box<[LockOnDrop; 2]>) {}
+29 | fn drop_lock(x: Box<[LockOnDrop; 2]>) {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: expectation is inferred to be 0..
 
 note: reporting preemption count for instance `drop_sleep`
-  --> $DIR/drop-array.rs:30:1
+  --> $DIR/drop-array.rs:32:1
    |
-30 | fn drop_sleep(x: Box<[SleepOnDrop; 2]>) {}
+32 | fn drop_sleep(x: Box<[SleepOnDrop; 2]>) {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: adjustment is inferred to be 0
 
 note: reporting preemption count for instance `drop_sleep`
-  --> $DIR/drop-array.rs:30:1
+  --> $DIR/drop-array.rs:32:1
    |
-30 | fn drop_sleep(x: Box<[SleepOnDrop; 2]>) {}
+32 | fn drop_sleep(x: Box<[SleepOnDrop; 2]>) {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: expectation is inferred to be 0
 
 error: dropping element of array expects the preemption count to be 0
-  --> $DIR/drop-array.rs:32:58
+  --> $DIR/drop-array.rs:34:58
    |
-32 | fn drop_sleep_and_lock(x: Box<[SleepAndLockOnDrop; 2]>) {}
+34 | fn drop_sleep_and_lock(x: Box<[SleepAndLockOnDrop; 2]>) {}
    |                        - value being dropped is here     ^
    |
    = note: but the possible preemption count when dropping the last element is 1

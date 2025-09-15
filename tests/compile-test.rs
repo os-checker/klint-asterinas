@@ -24,7 +24,7 @@ fn run_ui_tests(bless: bool) {
     };
 
     config.target_rustcflags = Some(format!(
-        "-Zcrate-attr=feature(register_tool) -Zcrate-attr=register_tool(klint) --crate-type=lib"
+        "-Zcrate-attr=feature(register_tool) -Zcrate-attr=register_tool(klint) --crate-type=lib -Zcrate-attr=no_std --extern alloc"
     ));
 
     config.src_base = "tests/ui".into();
