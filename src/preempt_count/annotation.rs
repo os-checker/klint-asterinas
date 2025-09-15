@@ -12,9 +12,9 @@ use crate::ctxt::AnalysisCtxt;
 
 impl<'tcx> AnalysisCtxt<'tcx> {
     fn preemption_count_annotation_fallback(&self, def_id: DefId) -> PreemptionCount {
-        match self.crate_name(def_id.krate).as_str() {
+        match self.crate_name(def_id.krate) {
             // Happens in a test environment where build-std is not enabled.
-            "core" | "alloc" | "std" => (),
+            sym::core | sym::alloc | sym::std => (),
             _ => {
                 warn!(
                     "Unable to retrieve preemption count annotation of non-local function {:?}",
