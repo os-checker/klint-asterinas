@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![crate_type="lib"]
-
 #[klint::drop_preempt_count(expect = 0)]
 trait A {}
 

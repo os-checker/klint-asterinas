@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![crate_type = "lib"]
 #![feature(allocator_api)]
 
 use core::alloc::{AllocError, Allocator, Layout};

@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![crate_type = "lib"]
-
 // This is a regression test which is minimize from ICE when compiling libcore.
 
 pub trait Pattern: Sized {

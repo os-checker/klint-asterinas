@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![crate_type="lib"]
-
 trait ToOpt: Sized {
     fn to_option(&self) -> Option<Self>;
 }

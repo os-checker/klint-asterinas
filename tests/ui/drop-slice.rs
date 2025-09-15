@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![crate_type = "lib"]
-
 struct LockOnDrop;
 
 impl Drop for LockOnDrop {

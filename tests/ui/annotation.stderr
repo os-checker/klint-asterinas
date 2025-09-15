@@ -1,40 +1,40 @@
 error: incorrect usage of `#[kint::preempt_count]`
- --> $DIR/annotation.rs:7:1
+ --> $DIR/annotation.rs:5:1
   |
-7 | #[klint::preempt_count]
+5 | #[klint::preempt_count]
   | ^^^^^^^^^^^^^^^^^^^^^^^
   |
   = help: correct usage looks like `#[kint::preempt_count(...)]`
   = note: `#[forbid(klint::incorrect_attribute)]` on by default
 
 error: incorrect usage of `#[kint::preempt_count]`
-  --> $DIR/annotation.rs:10:23
-   |
-10 | #[klint::preempt_count()]
-   |                       ^^
-   |
-   = help: at least one of `adjust` or `expect` property must be specified
+ --> $DIR/annotation.rs:8:23
+  |
+8 | #[klint::preempt_count()]
+  |                       ^^
+  |
+  = help: at least one of `adjust` or `expect` property must be specified
 
 error: incorrect usage of `#[kint::preempt_count]`
-  --> $DIR/annotation.rs:13:33
+  --> $DIR/annotation.rs:11:33
    |
-13 | #[klint::preempt_count(adjust = )]
+11 | #[klint::preempt_count(adjust = )]
    |                                 ^
    |
    = help: an integer expected
 
 error: incorrect usage of `#[kint::preempt_count]`
-  --> $DIR/annotation.rs:16:33
+  --> $DIR/annotation.rs:14:33
    |
-16 | #[klint::preempt_count(expect = )]
+14 | #[klint::preempt_count(expect = )]
    |                                 ^
    |
    = help: a range expected
 
 error: incorrect usage of `#[kint::preempt_count]`
-  --> $DIR/annotation.rs:22:23
+  --> $DIR/annotation.rs:20:23
    |
-22 | #[klint::preempt_count(unchecked)]
+20 | #[klint::preempt_count(unchecked)]
    |                       ^^^^^^^^^^^
    |
    = help: at least one of `adjust` or `expect` property must be specified
