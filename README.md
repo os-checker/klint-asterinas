@@ -31,3 +31,4 @@ rustup run nightly klint
 
 * [Infallible allocation](doc/infallible_allocation.md)
 * [Atomic context](doc/atomic_context.md)
+* [`build_error` checks](doc/build_error.md)
