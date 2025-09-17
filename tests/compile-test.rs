@@ -18,7 +18,7 @@ static PROFILE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 fn run_ui_tests(bless: bool) {
     let mut config = compiletest::Config {
         bless,
-        edition: Some("2021".into()),
+        edition: Some("2024".into()),
         mode: compiletest::common::Mode::Ui,
         ..Default::default()
     };
