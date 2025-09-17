@@ -25,6 +25,8 @@ To run this tool, use rustup which will prepare the necessary environment variab
 rustup run nightly klint
 ```
 
+klint is developed against latest nightly rustc; if you would like to use it with a stable Rust version, check the tagged releases.
+
 `klint` will behave like rustc, just with additional lints.
 
 ## Implemented Lints
