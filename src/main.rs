@@ -107,6 +107,7 @@ impl Callbacks for MyCallbacks {
             lint_store.register_lints(&[&atomic_context::ATOMIC_CONTEXT]);
             // lint_store
             //     .register_late_pass(|_| Box::new(infallible_allocation::InfallibleAllocation));
+            #[cfg(feature = "preempt_count")]
             lint_store.register_late_pass(|tcx| {
                 Box::new(atomic_context::AtomicContext {
                     cx: driver::cx::<MyCallbacks>(tcx),
