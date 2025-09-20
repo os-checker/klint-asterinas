@@ -23,9 +23,19 @@ fn run_ui_tests(bless: bool) {
         ..Default::default()
     };
 
-    config.target_rustcflags = Some(format!(
-        "-Zcrate-attr=feature(register_tool) -Zcrate-attr=register_tool(klint) --crate-type=lib -Zcrate-attr=no_std --extern alloc"
-    ));
+    config.target_rustcflags = Some(
+        [
+            "-Zcrate-attr=feature(register_tool)",
+            "-Zcrate-attr=register_tool(klint)",
+            "--crate-type=lib",
+            "-Zcrate-attr=no_std",
+            "--extern alloc",
+            "--emit=obj",
+            "-O",
+            "--cfg=CONFIG_FRAME_WARN=\"2048\"",
+        ]
+        .join(" "),
+    );
 
     config.src_base = "tests/ui".into();
     config.build_base = PROFILE_PATH.join("test/ui");

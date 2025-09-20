@@ -1,0 +1,13 @@
+ WARN klint::ctxt no klint metadata found for crate core
+ WARN klint::atomic_context Unable to determine property for FFI function `very_large_frame`
+ WARN klint::atomic_context Unable to determine property for FFI function `very_large_frame`
+error: stack size of `very_large_frame` is 4096 bytes, exceeds the 2048-byte limit
+ --> $DIR/stack_frame_size.rs:4:1
+  |
+4 | fn very_large_frame() {
+  | ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: the stack size is inferred from instruction `sub $0x1000,%rsp` at .text.very_large_frame+1
+
+error: aborting due to 1 previous error
+

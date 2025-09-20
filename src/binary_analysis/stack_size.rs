@@ -1,5 +1,6 @@
 use iced_x86::{Decoder, DecoderOptions, Mnemonic, OpKind, Register};
 use object::{Architecture, File, Object, ObjectSection, SectionKind};
+use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::{Diag, Diagnostic, Level};
 use rustc_hir::CRATE_HIR_ID;
 use rustc_middle::mir::mono::MonoItem;
@@ -109,6 +110,7 @@ pub fn stack_size_check<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'obj>) 
         let data = section.uncompressed_data().unwrap();
         let decoder = Decoder::with_ip(64, &data, 0, DecoderOptions::NONE);
 
+        let mut linted = FxHashSet::default();
         for insn in decoder {
             if insn.mnemonic() == Mnemonic::Sub
                 && insn.op0_kind() == OpKind::Register
@@ -130,6 +132,10 @@ pub fn stack_size_check<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'obj>) 
                 let Some(MonoItem::Fn(instance)) = cx.symbol_name_to_mono(symbol) else {
                     continue;
                 };
+
+                if !linted.insert(instance) {
+                    continue;
+                }
 
                 let diag: Diag<'_, ()> = StackFrameTooLarge {
                     section: section.name().unwrap(),
