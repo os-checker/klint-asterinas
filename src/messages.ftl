@@ -20,3 +20,13 @@ klint_build_error_referenced_without_debug =
 
 klint_build_error_referenced =
     this `build_error` reference is not optimized away
+
+klint_stack_frame_limit_help =
+    set stack size limit with `--cfg CONFIG_FRAME_WARN="<size-in-bytes>"`
+
+klint_stack_frame_limit_missing =
+    stack size limit is not set, default to {$default} bytes
+
+klint_stack_frame_limit_invalid =
+    stack size limit is set to `{$setting}` bytes, which cannot be parsed as integer
+

@@ -105,6 +105,7 @@ impl Callbacks for MyCallbacks {
             lint_store.register_lints(&[&INCORRECT_ATTRIBUTE]);
             lint_store.register_lints(&[&infallible_allocation::INFALLIBLE_ALLOCATION]);
             lint_store.register_lints(&[&atomic_context::ATOMIC_CONTEXT]);
+            lint_store.register_lints(&[&binary_analysis::stack_size::STACK_FRAME_TOO_LARGE]);
             // lint_store
             //     .register_late_pass(|_| Box::new(infallible_allocation::InfallibleAllocation));
             #[cfg(feature = "preempt_count")]

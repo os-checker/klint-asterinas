@@ -46,4 +46,6 @@ def! {
     atomic_context,
     atomic_context_only,
     process_context,
+
+    CONFIG_FRAME_WARN,
 }

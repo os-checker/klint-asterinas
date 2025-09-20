@@ -8,6 +8,7 @@ use crate::ctxt::AnalysisCtxt;
 mod build_error;
 mod dwarf;
 mod reconstruct;
+pub(crate) mod stack_size;
 
 pub fn binary_analysis<'tcx>(cx: &AnalysisCtxt<'tcx>, path: &Path) {
     let file = File::open(path).unwrap();
@@ -15,6 +16,7 @@ pub fn binary_analysis<'tcx>(cx: &AnalysisCtxt<'tcx>, path: &Path) {
     let object = ObjectFile::parse(&*mmap).unwrap();
 
     build_error::build_error_detection(cx, &object);
+    stack_size::stack_size_check(cx, &object);
 }
 
 fn find_symbol_from_section_offset<'obj>(
