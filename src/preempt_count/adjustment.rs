@@ -359,7 +359,7 @@ memoize!(
                 }
             }
 
-            ty::Dynamic(pred, _, _) => {
+            ty::Dynamic(pred, _) => {
                 if let Some(principal_trait) = pred.principal_def_id() {
                     if let Some(adj) = cx
                         .drop_preemption_count_annotation(principal_trait)
