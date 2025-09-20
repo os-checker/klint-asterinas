@@ -18,6 +18,7 @@ struct BuildErrorReferencedWithoutInstance<'a> {
 
 #[derive(Diagnostic)]
 #[diag(klint_build_error_referenced_without_debug)]
+#[note]
 struct BuildErrorReferencedWithoutDebug<'tcx> {
     #[primary_span]
     pub span: Span,

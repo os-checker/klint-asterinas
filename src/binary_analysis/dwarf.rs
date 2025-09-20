@@ -158,11 +158,6 @@ fn load_section<'file, 'data>(
 
     for (offset, reloc) in section.relocations() {
         let data_mut = data.to_mut();
-        if reloc.kind() != RelocationKind::Absolute {
-            Err(Error::UnexpectedElf(
-                "non-absolute relocation kind found in DWARF section",
-            ))?
-        }
 
         let (symbol_section_index, symbol_offset) = match reloc.target() {
             RelocationTarget::Symbol(symbol) => {
@@ -195,7 +190,18 @@ fn load_section<'file, 'data>(
         }
 
         let address = layout.encode(symbol_section_index, symbol_offset as _)?;
-        let value = reloc.addend().wrapping_add(address as _);
+
+        let value = match reloc.kind() {
+            RelocationKind::Absolute => reloc.addend().wrapping_add(address as _),
+            RelocationKind::Relative => {
+                let ptr = layout.encode(section.index(), offset as _)?;
+                reloc
+                    .addend()
+                    .wrapping_add(address as _)
+                    .wrapping_sub(ptr as _)
+            }
+            _ => Err(Error::UnexpectedElf("unknown relocation kind found"))?,
+        };
 
         match reloc.size() {
             32 => {
@@ -235,6 +241,8 @@ pub struct DwarfLoader<'file, 'data> {
     dwarf: Dwarf<ReaderTy<'file>>,
     #[allow(unused)]
     dwarf_sections: Arc<gimli::DwarfSections<Cow<'data, [u8]>>>,
+    #[allow(unused)]
+    eh_frame_section: Cow<'data, [u8]>,
 }
 
 #[derive(Clone, Debug)]
@@ -262,8 +270,11 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
         let section_layout = SectionLayout::for_object(object)?;
 
         let dwarf_sections = Arc::new(gimli::DwarfSections::load(|id| {
-            load_section(object, &&section_layout, id.name())
+            load_section(object, &section_layout, id.name())
         })?);
+        // Also load `.eh_frame` which may be present in place of `.debug_frame`.
+        let eh_frame_section = load_section(object, &section_layout, ".eh_frame")?;
+
         let dwarf =
             dwarf_sections.borrow(|section| gimli::EndianSlice::new(&section, gimli::LittleEndian));
         // SAFETY: erase lifetime. This is fine as `dwarf` will be dropped before `dwarf_sections`.
@@ -274,6 +285,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
             section_layout,
             dwarf: dwarf_transmute,
             dwarf_sections,
+            eh_frame_section,
         })
     }
 
