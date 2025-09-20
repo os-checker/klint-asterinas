@@ -1,18 +1,17 @@
-use std::borrow::Cow;
 use std::num::NonZero;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use gimli::{
-    AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, LineProgramHeader, LineRow,
-    Reader, RelocateReader, Unit,
+    AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, LineProgramHeader, LineRow, Unit,
 };
+use object::Object;
 use object::{
-    Endian, File, Object, ObjectSection, ObjectSymbol, Relocation, RelocationKind,
-    RelocationTarget, Section, SectionIndex,
+    Endian, File, ObjectSection, ObjectSymbol, RelocationKind, RelocationTarget, Section,
+    SectionIndex, elf::SHF_ALLOC,
 };
-use rustc_data_structures::fx::FxHashMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -35,181 +34,207 @@ impl From<gimli::Error> for Error {
     }
 }
 
-// Section address encoding.
+// Section address encoder and decoder.
 //
 // `gimli` library does not natively handle relocations; this is fine for binaries, but for relocatable
 // object files, sections begin with address 0 and you cannot tell apart different sections by looking at address.
 //
-// We use a clever scheme to encode the section index into higher bits of the address. This assumes that no single section
-// will be larger than 2GiB which should be a sane assumption to make.
-
-fn encode_address(section: SectionIndex, offset: i64) -> u64 {
-    (section.0 as u64) << 32 | 0x80000000 | (offset as u64)
+// To solve this, we lay all sections flat in memory (with some gaps between in cases there are pointers going beyond section boundaries).
+// We can then use these offsets to provide revese lookup to determine the symbolic addresses.
+struct SectionLayout {
+    forward_map: Vec<(u64, u64)>,
+    reverse_map: BTreeMap<u64, usize>,
 }
 
-fn decode_address(address: u64) -> (SectionIndex, i64) {
-    let section = SectionIndex((address >> 32) as _);
-    (
-        section,
-        address.wrapping_sub(encode_address(section, 0)) as _,
-    )
-}
+impl SectionLayout {
+    const SECTION_GAP: u64 = 65536;
 
-struct SectionRelocate<'file, 'data> {
-    object: &'file File<'data>,
-    map: FxHashMap<u64, Relocation>,
-}
-
-impl std::fmt::Debug for SectionRelocate<'_, '_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("SectionRelocate").finish()
-    }
-}
-
-impl<'file, 'data> SectionRelocate<'file, 'data> {
-    fn for_section(
-        object: &'file File<'data>,
-        section: &Section<'data, 'file>,
-    ) -> Result<Self, Error> {
-        Ok(Self {
-            object,
-            map: section
-                .relocations()
-                .map(|(offset, reloc)| {
-                    if reloc.kind() != RelocationKind::Absolute {
-                        Err(Error::UnexpectedElf(
-                            "non-absolute relocation kind found in DWARF section",
-                        ))?
-                    }
-
-                    match reloc.target() {
-                        RelocationTarget::Symbol(symbol) => {
-                            let symbol = object
-                                .symbol_by_index(symbol)
-                                .map_err(|_| Error::UnexpectedElf("symbol not found"))?;
-
-                            let Some(section_index) = symbol.section().index() else {
-                                Err(Error::UnexpectedElf(
-                                    "symbol is not associated with a section",
-                                ))?
-                            };
-
-                            let section = object
-                                .section_by_index(section_index)
-                                .map_err(|_| Error::UnexpectedElf("section not found"))?;
-
-                            if section.address() != 0 {
-                                Err(Error::UnexpectedElf(
-                                    "section address is non-zero in a relocatable file",
-                                ))?
-                            }
-                        }
-                        RelocationTarget::Section(section_index) => {
-                            let section = object
-                                .section_by_index(section_index)
-                                .map_err(|_| Error::UnexpectedElf("section not found"))?;
-
-                            if section.address() != 0 {
-                                Err(Error::UnexpectedElf(
-                                    "section address is non-zero in a relocatable file",
-                                ))?
-                            }
-                        }
-                        RelocationTarget::Absolute | _ => Err(Error::UnexpectedElf(
-                            "absolute relocation target found in DWARF section",
-                        ))?,
-                    }
-
-                    Ok((offset, reloc))
-                })
-                .collect::<Result<FxHashMap<_, _>, Error>>()?,
-        })
-    }
-}
-
-impl<'file, 'data> gimli::Relocate for &SectionRelocate<'file, 'data> {
-    fn relocate_address(&self, offset: usize, value: u64) -> gimli::Result<u64> {
-        let Some(reloc) = self.map.get(&(offset as u64)) else {
-            return Ok(value);
-        };
-
-        let addend = match reloc.target() {
-            RelocationTarget::Symbol(symbol) => {
-                let symbol = self.object.symbol_by_index(symbol).unwrap();
-                let section_index = symbol.section().index().unwrap();
-                encode_address(
-                    section_index,
-                    (symbol.address() as i64).wrapping_add(reloc.addend()),
-                )
+    fn for_object<'data>(object: &File<'data>) -> Result<Self, Error> {
+        fn section_alloc(section: &Section<'_, '_>) -> bool {
+            match section.flags() {
+                object::SectionFlags::None => false,
+                object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC as u64 != 0,
+                _ => bug!(),
             }
-            RelocationTarget::Section(section_index) => {
-                encode_address(section_index, reloc.addend())
-            }
-            _ => unreachable!(),
-        };
+        }
 
-        Ok(if reloc.has_implicit_addend() {
-            value.wrapping_add(addend)
-        } else {
-            addend
+        let section_count = object
+            .sections()
+            .map(|x| x.index().0)
+            .max()
+            .unwrap_or_default()
+            + 1;
+
+        // All non-allocate sections go to address 0, where we pre-allocate based on the maximum size.
+        let unalloc_sections_max = object
+            .sections()
+            .filter(section_alloc)
+            .map(|x| x.size())
+            .max()
+            .unwrap_or(0);
+
+        let overflow_err =
+            || Error::UnexpectedElf("cannot lay all sections in 64-bit address space");
+
+        let mut allocated = unalloc_sections_max
+            .checked_add(Self::SECTION_GAP)
+            .ok_or_else(overflow_err)?;
+
+        let mut forward_map = vec![(0, 0); section_count];
+        let mut reverse_map = BTreeMap::new();
+
+        for section in object.sections() {
+            let index = section.index();
+            if !section_alloc(&section) {
+                forward_map[index.0] = (0, section.size());
+                continue;
+            }
+
+            let address = allocated
+                .checked_next_multiple_of(section.align())
+                .ok_or_else(overflow_err)?;
+            forward_map[index.0] = (address, section.size());
+            reverse_map.insert(address, index.0);
+
+            allocated = address
+                .checked_add(section.size())
+                .ok_or_else(overflow_err)?
+                .checked_add(Self::SECTION_GAP)
+                .ok_or_else(overflow_err)?;
+        }
+
+        if allocated
+            .checked_add(Self::SECTION_GAP)
+            .ok_or_else(overflow_err)?
+            > i64::MAX as u64
+        {
+            Err(overflow_err())?;
+        }
+
+        Ok(SectionLayout {
+            forward_map,
+            reverse_map,
         })
     }
 
-    fn relocate_offset(&self, offset: usize, value: usize) -> gimli::Result<usize> {
-        let Some(reloc) = self.map.get(&(offset as u64)) else {
-            return Ok(value);
-        };
+    fn encode(&self, section: SectionIndex, offset: i64) -> Result<u64, Error> {
+        let (address, size) = self.forward_map[section.0];
+        if offset < -(Self::SECTION_GAP as i64 / 2)
+            || offset > (size + Self::SECTION_GAP / 2) as i64
+        {
+            Err(Error::UnexpectedElf("symbol offset too big"))?
+        }
 
-        let addend = match reloc.target() {
-            RelocationTarget::Symbol(symbol) => {
-                let symbol = self.object.symbol_by_index(symbol).unwrap();
-                symbol.address().wrapping_add(reloc.addend() as u64)
-            }
-            RelocationTarget::Section(_) => reloc.addend() as u64,
-            _ => unreachable!(),
-        };
-
-        <usize as gimli::ReaderOffset>::from_u64(if reloc.has_implicit_addend() {
-            (value as u64).wrapping_add(addend)
-        } else {
-            addend
-        })
+        Ok(address.wrapping_add(offset as _))
     }
-}
 
-struct SectionWithReloc<'file, 'data> {
-    data: Cow<'data, [u8]>,
-    reloc: SectionRelocate<'file, 'data>,
+    fn decode(&self, address: u64) -> Result<(SectionIndex, i64), Error> {
+        let address_plus_gap = address
+            .checked_add(Self::SECTION_GAP / 2)
+            .ok_or(Error::UnexpectedElf("unexpected symbol offset"))?;
+        let Some((&section_start, &index)) = self.reverse_map.range(..address_plus_gap).next_back()
+        else {
+            Err(Error::UnexpectedElf(
+                "address from unallocated section cannot be decoded",
+            ))?
+        };
+
+        let offset = (address as i64).wrapping_sub(section_start as _);
+        assert_eq!(self.encode(SectionIndex(index), offset).unwrap(), address);
+        Ok((SectionIndex(index), offset))
+    }
 }
 
 fn load_section<'file, 'data>(
     object: &'file File<'data>,
+    layout: &SectionLayout,
     name: &str,
-) -> Result<SectionWithReloc<'file, 'data>, Error> {
+) -> Result<Cow<'data, [u8]>, Error> {
     let Some(section) = object.section_by_name(name) else {
-        return Ok(SectionWithReloc {
-            data: Cow::Borrowed(&[]),
-            reloc: SectionRelocate {
-                object: object,
-                map: Default::default(),
-            },
-        });
+        return Ok(Cow::Borrowed(&[]));
     };
 
-    Ok(SectionWithReloc {
-        data: section.uncompressed_data()?,
-        reloc: SectionRelocate::for_section(object, &section)?,
-    })
+    let mut data = section.uncompressed_data()?;
+
+    for (offset, reloc) in section.relocations() {
+        let data_mut = data.to_mut();
+        if reloc.kind() != RelocationKind::Absolute {
+            Err(Error::UnexpectedElf(
+                "non-absolute relocation kind found in DWARF section",
+            ))?
+        }
+
+        let (symbol_section_index, symbol_offset) = match reloc.target() {
+            RelocationTarget::Symbol(symbol) => {
+                let symbol = object
+                    .symbol_by_index(symbol)
+                    .map_err(|_| Error::UnexpectedElf("symbol not found"))?;
+
+                let Some(section_index) = symbol.section().index() else {
+                    Err(Error::UnexpectedElf(
+                        "symbol is not associated with a section",
+                    ))?
+                };
+
+                (section_index, symbol.address())
+            }
+            RelocationTarget::Section(section_index) => (section_index, 0),
+            RelocationTarget::Absolute | _ => Err(Error::UnexpectedElf(
+                "absolute relocation target found in DWARF section",
+            ))?,
+        };
+
+        let symbol_section = object
+            .section_by_index(symbol_section_index)
+            .map_err(|_| Error::UnexpectedElf("section not found"))?;
+
+        if symbol_section.address() != 0 {
+            Err(Error::UnexpectedElf(
+                "section address is non-zero in a relocatable file",
+            ))?
+        }
+
+        let address = layout.encode(symbol_section_index, symbol_offset as _)?;
+        let value = reloc.addend().wrapping_add(address as _);
+
+        match reloc.size() {
+            32 => {
+                let addend = if reloc.has_implicit_addend() {
+                    i32::from_le_bytes(data_mut[offset as usize..][..4].try_into().unwrap())
+                } else {
+                    0
+                };
+                let value: i32 = value
+                    .wrapping_add(addend as i64)
+                    .try_into()
+                    .map_err(|_| Error::UnexpectedElf("relocation truncated to fit"))?;
+
+                data_mut[offset as usize..][..4].copy_from_slice(&value.to_le_bytes());
+            }
+            64 => {
+                let addend = if reloc.has_implicit_addend() {
+                    i64::from_le_bytes(data_mut[offset as usize..][..8].try_into().unwrap())
+                } else {
+                    0
+                };
+                let value = value.wrapping_add(addend as i64);
+                data_mut[offset as usize..][..8].copy_from_slice(&value.to_le_bytes());
+            }
+            _ => Err(Error::UnexpectedElf("unknown relocation size"))?,
+        }
+    }
+
+    Ok(data)
 }
 
-type ReaderTy<'a, 'file, 'data> =
-    RelocateReader<EndianSlice<'a, gimli::LittleEndian>, &'a SectionRelocate<'file, 'data>>;
+type ReaderTy<'a> = EndianSlice<'a, gimli::LittleEndian>;
 
 pub struct DwarfLoader<'file, 'data> {
-    // This is actually `Dwarf<ReaderTy<'dwarf_sections, 'file, 'data>`.
-    dwarf: Dwarf<ReaderTy<'file, 'file, 'data>>,
+    section_layout: SectionLayout,
+    // This is actually `Dwarf<ReaderTy<'dwarf_sections>`.
+    dwarf: Dwarf<ReaderTy<'file>>,
     #[allow(unused)]
-    dwarf_sections: Arc<gimli::DwarfSections<SectionWithReloc<'file, 'data>>>,
+    dwarf_sections: Arc<gimli::DwarfSections<Cow<'data, [u8]>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -234,32 +259,34 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
             ))?
         }
 
+        let section_layout = SectionLayout::for_object(object)?;
+
         let dwarf_sections = Arc::new(gimli::DwarfSections::load(|id| {
-            load_section(object, id.name())
+            load_section(object, &&section_layout, id.name())
         })?);
-        let dwarf = dwarf_sections.borrow(|section| {
-            let slice = gimli::EndianSlice::new(&section.data, gimli::LittleEndian);
-            gimli::RelocateReader::new(slice, &section.reloc)
-        });
+        let dwarf =
+            dwarf_sections.borrow(|section| gimli::EndianSlice::new(&section, gimli::LittleEndian));
         // SAFETY: erase lifetime. This is fine as `dwarf` will be dropped before `dwarf_sections`.
-        let dwarf_transmute = unsafe {
-            std::mem::transmute::<
-                Dwarf<ReaderTy<'_, 'file, 'data>>,
-                Dwarf<ReaderTy<'_, 'file, 'data>>,
-            >(dwarf)
-        };
+        let dwarf_transmute =
+            unsafe { std::mem::transmute::<Dwarf<ReaderTy<'_>>, Dwarf<ReaderTy<'_>>>(dwarf) };
 
         Ok(Self {
+            section_layout,
             dwarf: dwarf_transmute,
             dwarf_sections,
         })
     }
 
+    // This returns the correct lifetime instead of the hacked one.
+    fn dwarf(&self) -> &Dwarf<ReaderTy<'_>> {
+        &self.dwarf
+    }
+
     /// Obtain the linkage name of a subprogram or inlined subroutine.
     fn linkage_name(
         &self,
-        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
-        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_, 'file, 'data>>,
+        unit: &Unit<ReaderTy<'_>>,
+        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_>>,
     ) -> Result<String, Error> {
         let mut attrs = die.attrs();
         let mut name = None;
@@ -269,18 +296,18 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
             match attr.name() {
                 gimli::DW_AT_linkage_name => {
                     return Ok(self
-                        .dwarf
+                        .dwarf()
                         .attr_string(unit, attr.value())?
                         .to_string()?
-                        .into_owned());
+                        .to_owned());
                 }
 
                 gimli::DW_AT_name => {
                     name = Some(
-                        self.dwarf
+                        self.dwarf()
                             .attr_string(unit, attr.value())?
                             .to_string()?
-                            .into_owned(),
+                            .to_owned(),
                     );
                 }
 
@@ -321,8 +348,8 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
     /// Obtain PC ranges related to a DIE.
     fn ranges(
         &self,
-        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
-        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_, 'file, 'data>>,
+        unit: &Unit<ReaderTy<'_>>,
+        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_>>,
     ) -> Result<(SectionIndex, Vec<Range<i64>>), Error> {
         let mut ranges = Vec::new();
 
@@ -330,7 +357,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
         while let Some(attr) = attrs.next()? {
             match attr.name() {
                 gimli::DW_AT_low_pc => {
-                    let Some(low_pc) = self.dwarf.attr_address(&unit, attr.value())? else {
+                    let Some(low_pc) = self.dwarf().attr_address(&unit, attr.value())? else {
                         Err(Error::UnexpectedDwarf("DW_AT_low_pc is not an address"))?
                     };
 
@@ -358,8 +385,8 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                         ))?
                     };
 
-                    let offset = self.dwarf.ranges_offset(unit, offset)?;
-                    let mut range = self.dwarf.ranges(unit, offset)?;
+                    let offset = self.dwarf().ranges_offset(unit, offset)?;
+                    let mut range = self.dwarf().ranges(unit, offset)?;
                     while let Some(range) = range.next()? {
                         ranges.push((range.begin, range.end.wrapping_sub(range.begin)));
                     }
@@ -373,12 +400,12 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
             return Ok((SectionIndex(0), Vec::new()));
         }
 
-        let encoded_section = decode_address(ranges[0].0).0;
+        let encoded_section = self.section_layout.decode(ranges[0].0)?.0;
 
         let ranges = ranges
             .into_iter()
             .map(|(begin, len)| {
-                let (sec, begin) = decode_address(begin);
+                let (sec, begin) = self.section_layout.decode(begin)?;
                 if sec != encoded_section {
                     return Err(Error::UnexpectedDwarf(
                         "Single DIE covers multiple sections",
@@ -394,8 +421,8 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
 
     fn call_location(
         &self,
-        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
-        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_, 'file, 'data>>,
+        unit: &Unit<ReaderTy<'_>>,
+        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_>>,
     ) -> Result<Option<Location>, Error> {
         let Some(file) = die.attr(gimli::DW_AT_call_file)? else {
             // This may happen when two calls from different files are merged.
@@ -504,8 +531,8 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
 
     fn file_name(
         &self,
-        unit: &Unit<ReaderTy<'_, 'file, 'data>>,
-        line: &LineProgramHeader<ReaderTy<'_, 'file, 'data>>,
+        unit: &Unit<ReaderTy<'_>>,
+        line: &LineProgramHeader<ReaderTy<'_>>,
         index: u64,
     ) -> Result<PathBuf, Error> {
         let file = line.file(index).ok_or(Error::UnexpectedDwarf(
@@ -519,19 +546,13 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                 "debug_lines referenced non-existent directory",
             ))?;
 
-            path.push(
-                self.dwarf
-                    .attr_string(&unit, directory)?
-                    .to_string()?
-                    .as_ref(),
-            );
+            path.push(self.dwarf().attr_string(&unit, directory)?.to_string()?);
         }
 
         path.push(
-            self.dwarf
+            self.dwarf()
                 .attr_string(&unit, file.path_name())?
-                .to_string()?
-                .as_ref(),
+                .to_string()?,
         );
 
         Ok(path)
@@ -554,7 +575,8 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                 while let Some((_, row)) = rows.next_row()? {
                     let row = *row;
                     let encoded_address = row.address();
-                    let (encoded_section, encoded_offset) = decode_address(encoded_address);
+                    let (encoded_section, encoded_offset) =
+                        self.section_layout.decode(encoded_address)?;
 
                     // Skip over sections that we don't care about.
                     if encoded_section != section_index {
