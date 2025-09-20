@@ -15,6 +15,7 @@ default = ["preempt_count"]
 [dependencies]
 rusqlite = "0.37"
 home = "0.5"
+iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder", "gas"] }
 
 [dev-dependencies]
 compiletest_rs = { version = "0.11", features = [ "tmp" ] }

@@ -30,3 +30,6 @@ klint_stack_frame_limit_missing =
 klint_stack_frame_limit_invalid =
     stack size limit is set to `{$setting}` bytes, which cannot be parsed as integer
 
+klint_stack_frame_too_large =
+    stack size of `{$instance}` is {$stack_size} bytes, exceeds the {$frame_limit}-byte limit
+    .note = the stack size is inferred from instruction `{$insn}` at {$section}+{$offset}
