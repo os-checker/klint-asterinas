@@ -31,3 +31,4 @@ klint is developed against latest nightly rustc; if you would like to use it wit
 * [Infallible allocation](doc/infallible_allocation.md)
 * [Atomic context](doc/atomic_context.md)
 * [`build_error` checks](doc/build_error.md)
+* [Stack frame size check](doc/stack_size.md)
