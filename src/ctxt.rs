@@ -70,7 +70,7 @@ impl<'tcx> std::ops::Deref for AnalysisCtxt<'tcx> {
 }
 
 macro_rules! memoize {
-    ($(#[$attr:meta])* $vis:vis fn $name:ident<$tcx: lifetime>($cx:ident: $($_: ty)?, $($key:ident: $key_ty:ty),* $(,)?) -> $ret: ty { $($body: tt)* }) => {
+    ($(#[$attr:meta])* $vis:vis fn $name:ident<$tcx: lifetime>($cx:ident: $($_: ty)? $(, $key:ident: $key_ty:ty)* $(,)?) -> $ret: ty { $($body: tt)* }) => {
         #[allow(non_camel_case_types)]
         $vis struct $name;
 

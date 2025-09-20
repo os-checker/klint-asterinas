@@ -1,8 +1,42 @@
+use std::sync::Arc;
+
+use rustc_data_structures::fx::FxHashMap;
+use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{Instance, TyCtxt};
 use rustc_middle::{mir, ty};
 use rustc_span::{BytePos, DUMMY_SP, FileName, Span};
 
+use crate::ctxt::AnalysisCtxt;
 use crate::diagnostic::use_stack::UseSiteKind;
+
+memoize!(
+    fn mono_items<'tcx>(cx: &AnalysisCtxt<'tcx>) -> Arc<Vec<MonoItem<'tcx>>> {
+        let mono_items = crate::monomorphize_collector::collect_crate_mono_items(
+            cx.tcx,
+            crate::monomorphize_collector::MonoItemCollectionStrategy::Lazy,
+        )
+        .0;
+
+        mono_items.into()
+    }
+);
+
+memoize!(
+    fn symbol_name_map<'tcx>(cx: &AnalysisCtxt<'tcx>) -> Arc<FxHashMap<&'tcx str, MonoItem<'tcx>>> {
+        let map = cx.mono_items();
+        Arc::new(
+            map.iter()
+                .map(|&item| (item.symbol_name(cx.tcx).name, item))
+                .collect(),
+        )
+    }
+);
+
+impl<'tcx> AnalysisCtxt<'tcx> {
+    pub fn symbol_name_to_mono(&self, name: &str) -> Option<MonoItem<'tcx>> {
+        self.symbol_name_map().get(name).copied()
+    }
+}
 
 pub fn recover_span_from_line_no<'tcx>(
     tcx: TyCtxt<'tcx>,

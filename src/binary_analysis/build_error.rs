@@ -48,13 +48,6 @@ pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'o
     // Now this file contains reference to `build_error`, this is not expected.
     // We need to figure out why it is being generated.
 
-    // Collect all mono items, which we will use to find out which symbol is problematic.
-    let mono_items = crate::monomorphize_collector::collect_crate_mono_items(
-        cx.tcx,
-        crate::monomorphize_collector::MonoItemCollectionStrategy::Lazy,
-    )
-    .0;
-
     for section in file.sections() {
         for (offset, relocation) in section.relocations() {
             if relocation.target() == relo_target_needle {
@@ -66,10 +59,7 @@ pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'o
                     continue;
                 };
 
-                let Some(mono) = mono_items
-                    .iter()
-                    .find(|item| item.symbol_name(cx.tcx).name == symbol)
-                else {
+                let Some(mono) = cx.symbol_name_to_mono(symbol) else {
                     cx.dcx()
                         .emit_err(BuildErrorReferencedWithoutInstance { symbol });
                     continue;
@@ -80,8 +70,8 @@ pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'o
 
                 let mut diag = cx.dcx().create_err(BuildErrorReferenced);
                 let mut frame = match mono {
-                    MonoItem::Fn(instance) => *instance,
-                    MonoItem::Static(def_id) => Instance::mono(cx.tcx, *def_id),
+                    MonoItem::Fn(instance) => instance,
+                    MonoItem::Static(def_id) => Instance::mono(cx.tcx, def_id),
                     MonoItem::GlobalAsm(_) => bug!(),
                 };
 
@@ -153,13 +143,13 @@ pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'o
                         MonoItem::Fn(instance) => BuildErrorReferencedWithoutDebug {
                             span: cx.def_span(instance.def_id()),
                             kind: "fn",
-                            instance: *instance,
+                            instance,
                             err: err.to_string(),
                         },
                         MonoItem::Static(def_id) => BuildErrorReferencedWithoutDebug {
                             span: cx.def_span(def_id),
                             kind: "static",
-                            instance: Instance::mono(cx.tcx, *def_id),
+                            instance: Instance::mono(cx.tcx, def_id),
                             err: err.to_string(),
                         },
                         MonoItem::GlobalAsm(_) => {
