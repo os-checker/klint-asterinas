@@ -20,10 +20,7 @@ cargo install --path .
 
 Note that klint currently is pinned to a Rust version so it is likely that running `cargo install --git` will not work as it will not use the `rust-toolchain` file in the repository.
 
-To run this tool, use rustup which will prepare the necessary environment variables:
-```
-rustup run nightly klint
-```
+To run this tool for Linux kernel build, use `make RUSTC=<path to klint>` to use klint in place of a Rust compiler.
 
 klint is developed against latest nightly rustc; if you would like to use it with a stable Rust version, check the tagged releases.
 
