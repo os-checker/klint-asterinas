@@ -1,0 +1,40 @@
+diff --git a/rust/Makefile b/rust/Makefile
+--- a/rust/Makefile
++++ b/rust/Makefile
+@@ -434,6 +434,7 @@ quiet_cmd_rustc_library = $(if $(skip_clippy),RUSTC,$(RUSTC_OR_CLIPPY_QUIET)) L
+ 	$(if $(skip_clippy),$(RUSTC),$(RUSTC_OR_CLIPPY)) \
+ 		$(filter-out $(skip_flags),$(rust_flags)) $(rustc_target_flags) \
+ 		--emit=dep-info=$(depfile) --emit=obj=$@ \
++		-Zcrate-attr='feature(register_tool)' -Zcrate-attr='register_tool(klint)' \
+ 		--emit=metadata=$(dir $@)$(patsubst %.o,lib%.rmeta,$(notdir $@)) \
+ 		--crate-type rlib -L$(objtree)/$(obj) \
+ 		--crate-name $(patsubst %.o,%,$(notdir $@)) $< \
+diff --git a/scripts/Makefile.build b/scripts/Makefile.build
+index d0ee33a487be9..17f8369198873 100644
+--- a/scripts/Makefile.build
++++ b/scripts/Makefile.build
+@@ -325,9 +325,11 @@ rust_allowed_features := asm_const,asm_goto,arbitrary_self_types,lint_reasons,of
+ rust_common_cmd = \
+ 	OBJTREE=$(abspath $(objtree)) \
+ 	RUST_MODFILE=$(modfile) $(RUSTC_OR_CLIPPY) $(rust_flags) \
+-	-Zallow-features=$(rust_allowed_features) \
++	-Zallow-features=$(rust_allowed_features),register_tool \
+ 	-Zcrate-attr=no_std \
+ 	-Zcrate-attr='feature($(rust_allowed_features))' \
++	-Zcrate-attr='feature(register_tool)' \
++	-Zcrate-attr='register_tool(klint)' \
+ 	-Zunstable-options --extern pin_init --extern kernel \
+ 	--crate-type rlib -L $(objtree)/rust/ \
+ 	--crate-name $(basename $(notdir $@)) \
+diff --git a/scripts/Makefile.extrawarn b/scripts/Makefile.extrawarn
+index dca175fffcabe..7b359603c1bd7 100644
+--- a/scripts/Makefile.extrawarn
++++ b/scripts/Makefile.extrawarn
+@@ -23,6 +23,7 @@ KBUILD_CFLAGS += -Wmissing-prototypes
+ 
+ ifneq ($(CONFIG_FRAME_WARN),0)
+ KBUILD_CFLAGS += -Wframe-larger-than=$(CONFIG_FRAME_WARN)
++KBUILD_RUSTFLAGS += -Wklint::stack-frame-too-large
+ endif
+ 
+ KBUILD_CPPFLAGS-$(CONFIG_WERROR) += -Werror

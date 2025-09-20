@@ -20,11 +20,22 @@ cargo install --path .
 
 Note that klint currently is pinned to a Rust version so it is likely that running `cargo install --git` will not work as it will not use the `rust-toolchain` file in the repository.
 
-To run this tool for Linux kernel build, use `make RUSTC=<path to klint>` to use klint in place of a Rust compiler.
-
 klint is developed against latest nightly rustc; if you would like to use it with a stable Rust version, check the tagged releases.
 
 `klint` will behave like rustc, just with additional lints.
+
+## Run on Linux kernel
+
+`klint`'s atomic context checker is not lint-clean on Linux kernel tree.
+If you would just like to use the `build_error` and stack frame size check feature, you can choose to disable atomic context checking when building `klint`:
+```console
+cargo install --path . --no-default-features
+```
+
+`klint` is a tool and would need to be registered with `rustc`, to do so, apply [this patch](doc/kernel.patch) to the kernel tree.
+This patch can be used even if plain rustc or clippy is used for kernel build.
+
+To run this tool for Linux kernel build, use `make RUSTC=<path to klint>` to use klint in place of a Rust compiler.
 
 ## Implemented Lints
 
