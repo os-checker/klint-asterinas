@@ -390,14 +390,17 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                 gimli::DW_AT_high_pc => (),
 
                 gimli::DW_AT_ranges => {
-                    let AttributeValue::DebugRngListsIndex(offset) = attr.value() else {
-                        dbg!(attr);
-                        Err(Error::UnexpectedDwarf(
+                    let offset = match attr.value() {
+                        AttributeValue::DebugRngListsIndex(offset) => {
+                            self.dwarf().ranges_offset(unit, offset)?
+                        }
+                        AttributeValue::RangeListsRef(offset) => {
+                            self.dwarf().ranges_offset_from_raw(unit, offset)
+                        }
+                        _ => Err(Error::UnexpectedDwarf(
                             "DW_AT_ranges is not rnglist reference",
-                        ))?
+                        ))?,
                     };
-
-                    let offset = self.dwarf().ranges_offset(unit, offset)?;
                     let mut range = self.dwarf().ranges(unit, offset)?;
                     while let Some(range) = range.next()? {
                         ranges.push((range.begin, range.end.wrapping_sub(range.begin)));
