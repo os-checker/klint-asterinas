@@ -24,6 +24,11 @@ klint is developed against latest nightly rustc; if you would like to use it wit
 
 `klint` will behave like rustc, just with additional lints.
 
+If you use `nix`, you can also build and run `klint` directly:
+```console
+nix run github:Rust-for-Linux/klint
+```
+
 ## Run on Linux kernel
 
 `klint`'s atomic context checker is not lint-clean on Linux kernel tree.

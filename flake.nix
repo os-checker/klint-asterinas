@@ -18,6 +18,7 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
+        inherit (nixpkgs) lib;
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
           inherit system overlays;
@@ -45,7 +46,16 @@
               pname = "klint";
               version = "0.1.0";
 
-              src = ./.;
+              src = lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.unions [
+                  ./Cargo.toml
+                  ./Cargo.lock
+                  ./build.rs
+                  ./.cargo
+                  ./src
+                ];
+              };
               cargoLock = {
                 lockFile = ./Cargo.lock;
               };
