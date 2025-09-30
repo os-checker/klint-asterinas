@@ -120,6 +120,10 @@ impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
         self.backend.locale_resource()
     }
 
+    fn name(&self) -> &'static str {
+        self.backend.name()
+    }
+
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Box<dyn Any> {
         let ongoing_codegen = self.backend.codegen_crate(tcx);
         let outputs = tcx.output_filenames(());
