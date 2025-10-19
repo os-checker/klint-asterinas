@@ -1181,7 +1181,7 @@ memoize!(
         // Addition check for trait impl methods.
         if matches!(instance.def, ty::InstanceKind::Item(_))
             && let Some(impl_) = cx.impl_of_assoc(instance.def_id())
-            && let Some(trait_) = cx.trait_id_of_impl(impl_)
+            && let Some(trait_) = cx.impl_opt_trait_id(impl_)
         {
             let trait_def = cx.trait_def(trait_);
             let trait_item = cx
