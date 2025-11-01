@@ -109,7 +109,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     }
 
     fn apply_primary_statement_effect(
-        &mut self,
+        &self,
         _state: &mut Self::Domain,
         _statement: &rustc_middle::mir::Statement<'tcx>,
         _location: rustc_middle::mir::Location,
@@ -117,7 +117,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     }
 
     fn apply_primary_terminator_effect<'mir>(
-        &mut self,
+        &self,
         state: &mut Self::Domain,
         terminator: &'mir rustc_middle::mir::Terminator<'tcx>,
         location: rustc_middle::mir::Location,
@@ -213,7 +213,7 @@ impl<'tcx> Analysis<'tcx> for AdjustmentComputation<'_, 'tcx, '_> {
     }
 
     fn apply_call_return_effect(
-        &mut self,
+        &self,
         _state: &mut Self::Domain,
         _block: BasicBlock,
         _return_places: rustc_middle::mir::CallReturnPlaces<'_, 'tcx>,
