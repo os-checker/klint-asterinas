@@ -207,6 +207,10 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             }
             "list_lru_count" => NO_ASSUMPTION,
 
+            // lockdep.h
+            "mutex_assert_is_held" => NO_ASSUMPTION,
+            "spin_assert_is_held" => NO_ASSUMPTION,
+
             // moduleparam.h
             "kernel_param_lock" => MIGHT_SLEEP,
             "kernel_param_unlock" => MIGHT_SLEEP,
