@@ -155,7 +155,7 @@ impl<'mir, 'tcx, 'cx> MirNeighborVisitor<'mir, 'tcx, 'cx> {
                 }
             }
             mir::Rvalue::Cast(
-                mir::CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer, _),
+                mir::CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer(_), _),
                 ref operand,
                 _,
             ) => {
