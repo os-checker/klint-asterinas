@@ -13,8 +13,8 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_session::StableCrateId;
 use rustc_span::def_id::{CrateNum, DefId, DefIndex};
 use rustc_span::{
-    BytePos, ByteSymbol, DUMMY_SP, SourceFile, Span, SpanDecoder, SpanEncoder, StableSourceFileId,
-    Symbol, SyntaxContext,
+    BlobDecoder, BytePos, ByteSymbol, DUMMY_SP, SourceFile, Span, SpanDecoder, SpanEncoder,
+    StableSourceFileId, Symbol, SyntaxContext,
 };
 
 // This is the last available version of `MemEncoder` in rustc_serialize::opaque before its removal.
@@ -394,10 +394,6 @@ impl<'a, 'tcx> SpanDecoder for DecodeContext<'a, 'tcx> {
         self.tcx.stable_crate_id_to_crate_num(id)
     }
 
-    fn decode_def_index(&mut self) -> DefIndex {
-        DefIndex::from_u32(self.read_u32())
-    }
-
     fn decode_span(&mut self) -> Span {
         let tag = u8::decode(self);
 
@@ -439,14 +435,6 @@ impl<'a, 'tcx> SpanDecoder for DecodeContext<'a, 'tcx> {
         }
     }
 
-    fn decode_symbol(&mut self) -> Symbol {
-        Symbol::intern(self.read_str())
-    }
-
-    fn decode_byte_symbol(&mut self) -> ByteSymbol {
-        ByteSymbol::intern(self.read_byte_str())
-    }
-
     fn decode_expn_id(&mut self) -> rustc_span::ExpnId {
         unreachable!();
     }
@@ -464,5 +452,19 @@ impl<'a, 'tcx> SpanDecoder for DecodeContext<'a, 'tcx> {
 
     fn decode_attr_id(&mut self) -> rustc_span::AttrId {
         unreachable!();
+    }
+}
+
+impl<'a, 'tcx> BlobDecoder for DecodeContext<'a, 'tcx> {
+    fn decode_symbol(&mut self) -> Symbol {
+        Symbol::intern(self.read_str())
+    }
+
+    fn decode_byte_symbol(&mut self) -> ByteSymbol {
+        ByteSymbol::intern(self.read_byte_str())
+    }
+
+    fn decode_def_index(&mut self) -> DefIndex {
+        DefIndex::from_u32(self.read_u32())
     }
 }
