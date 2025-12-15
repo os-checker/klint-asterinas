@@ -21,9 +21,7 @@ extern crate rustc_middle;
 #[macro_use]
 extern crate tracing;
 
-extern crate gimli;
 extern crate itertools;
-extern crate object;
 extern crate rustc_abi;
 extern crate rustc_ast;
 extern crate rustc_codegen_ssa;
