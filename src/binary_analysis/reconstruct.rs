@@ -4,7 +4,7 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{Instance, TyCtxt};
 use rustc_middle::{mir, ty};
-use rustc_span::{BytePos, DUMMY_SP, FileName, Span};
+use rustc_span::{BytePos, DUMMY_SP, FileName, RemapPathScopeComponents, Span};
 
 use crate::ctxt::AnalysisCtxt;
 use crate::diagnostic::use_stack::UseSiteKind;
@@ -47,7 +47,7 @@ pub fn recover_span_from_line_no<'tcx>(
     let mut found_file = None;
     for file in source_map.files().iter() {
         if let FileName::Real(real) = &file.name {
-            if real.local_path_if_available() == location.file {
+            if real.path(RemapPathScopeComponents::DEBUGINFO) == location.file {
                 found_file = Some(file.clone());
             }
         }
