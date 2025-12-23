@@ -66,7 +66,7 @@ fn remap_mir_for_const_eval_select<'tcx>(
                 };
                 let (method, place): (fn(Place<'tcx>) -> Operand<'tcx>, Place<'tcx>) =
                     match tupled_args.node {
-                        Operand::Constant(_) => {
+                        Operand::Constant(_) | Operand::RuntimeChecks(_) => {
                             // there is no good way of extracting a tuple arg from a constant (const generic stuff)
                             // so we just create a temporary and deconstruct that.
                             let local = body.local_decls.push(LocalDecl::new(ty, fn_span));
