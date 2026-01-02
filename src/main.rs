@@ -12,6 +12,7 @@
 #![feature(once_cell_get_mut)]
 // Used in symbol.rs
 #![feature(macro_metavar_expr)]
+#![feature(unsize)]
 #![warn(rustc::internal)]
 
 #[macro_use]
@@ -70,6 +71,7 @@ mod preempt_count;
 mod serde;
 mod symbol;
 mod util;
+mod utils;
 
 rustc_session::declare_tool_lint! {
     pub klint::INCORRECT_ATTRIBUTE,

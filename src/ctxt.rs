@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::any::{Any, TypeId};
+use std::any::Any;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
@@ -15,6 +16,7 @@ use rustc_session::config::OutputType;
 use rustc_span::{DUMMY_SP, Span};
 
 use crate::diagnostic::use_stack::UseSite;
+use crate::utils::anymap::AnyMap;
 
 pub(crate) trait Query: 'static {
     const NAME: &'static str;
@@ -55,7 +57,7 @@ pub struct AnalysisCtxt<'tcx> {
     pub sql_conn: RwLock<FxHashMap<CrateNum, Option<Arc<MTLock<Connection>>>>>,
 
     pub call_stack: RwLock<Vec<UseSite<'tcx>>>,
-    pub query_cache: RwLock<FxHashMap<TypeId, Arc<dyn Any + DynSend + DynSync>>>,
+    pub query_cache: RwLock<AnyMap<dyn Any + DynSend + DynSync>>,
 }
 
 // Everything in `AnalysisCtxt` is either `DynSend/DynSync` or `Send/Sync`, but since there're no relation between two right now compiler cannot infer this.
@@ -114,38 +116,21 @@ impl Drop for AnalysisCtxt<'_> {
     }
 }
 
-// Used when parallel compiler is used.
-trait ArcDowncast: Sized {
-    fn downcast<T: Any>(self) -> Result<Arc<T>, Self>;
-}
-
-impl ArcDowncast for Arc<dyn Any> {
-    fn downcast<T: Any>(self) -> Result<Arc<T>, Self> {
-        if (*self).is::<T>() {
-            Ok(unsafe { Arc::from_raw(Arc::into_raw(self) as _) })
-        } else {
-            Err(self)
-        }
-    }
-}
-
 impl<'tcx> AnalysisCtxt<'tcx> {
     pub(crate) fn query_cache<Q: Query>(
         &self,
     ) -> Arc<RwLock<FxHashMap<Q::Key<'tcx>, Q::Value<'tcx>>>> {
-        let key = TypeId::of::<Q>();
         let mut guard = self.query_cache.borrow_mut();
-        let cache = (guard
-            .entry(key)
+        let cache = guard
+            .entry()
             .or_insert_with(|| {
                 let cache = Arc::new(RwLock::new(
                     FxHashMap::<Q::Key<'static>, Q::Value<'static>>::default(),
                 ));
-                cache
+                (PhantomData::<fn() -> Q>, cache)
             })
-            .clone() as Arc<dyn Any>)
-            .downcast::<RwLock<FxHashMap<Q::Key<'static>, Q::Value<'static>>>>()
-            .unwrap();
+            .1
+            .clone();
         // Everything stored inside query_cache is conceptually `'tcx`, but due to limitation
         // of `Any` we hack around the lifetime.
         unsafe { std::mem::transmute(cache) }
