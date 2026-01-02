@@ -184,7 +184,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         // If we're running with pre-built sysroot, none of the these will be available to klint.
-        // In such cases, stop emitting too much warnings (just keep the only for libcore).
+        // In such cases, stop emitting too much warnings.
         if result.is_none() && !sysroot {
             let name = self.tcx.crate_name(cnum);
             warn!("no klint metadata found for crate {}", name);
