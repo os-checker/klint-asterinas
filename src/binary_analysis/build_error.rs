@@ -32,7 +32,12 @@ struct BuildErrorReferencedWithoutDebug<'tcx> {
 struct BuildErrorReferenced;
 
 pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'obj>) {
-    let Some(build_error_symbol) = file.symbol_by_name("rust_build_error") else {
+    let Some(build_error) = cx.get_klint_diagnostic_item(crate::symbol::build_error) else {
+        return;
+    };
+    let build_error_symbol_name = cx.symbol_name(Instance::mono(cx.tcx, build_error)).name;
+
+    let Some(build_error_symbol) = file.symbol_by_name(build_error_symbol_name) else {
         // This object file contains no reference to `build_error`, all good!
         return;
     };
@@ -114,7 +119,7 @@ pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'o
                     if let Some((_, site)) = super::reconstruct::recover_fn_call_span(
                         cx.tcx,
                         frame,
-                        "rust_build_error",
+                        build_error_symbol_name,
                         Some(&loc),
                     ) {
                         recovered_call_stack.push(UseSite {

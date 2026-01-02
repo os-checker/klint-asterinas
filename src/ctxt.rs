@@ -318,6 +318,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         ret.sql_create_table::<crate::preempt_count::adjustment::instance_adjustment>();
         ret.sql_create_table::<crate::preempt_count::expectation::instance_expectation>();
         ret.sql_create_table::<crate::mir::analysis_mir>();
+        ret.sql_create_table::<crate::diagnostic_items::klint_diagnostic_items>();
         ret
     }
 }

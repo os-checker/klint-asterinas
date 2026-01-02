@@ -5,12 +5,12 @@
 use std::sync::Arc;
 
 use rustc_ast::tokenstream::{self, TokenTree};
-use rustc_ast::{DelimArgs, token};
+use rustc_ast::{DelimArgs, LitKind, MetaItemLit, token};
 use rustc_errors::{Diag, ErrorGuaranteed};
 use rustc_hir::{AttrArgs, AttrItem, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::symbol::Ident;
-use rustc_span::{Span, sym};
+use rustc_span::{Span, Symbol, sym};
 
 use crate::preempt_count::ExpectationRange;
 
@@ -37,6 +37,10 @@ pub enum KlintAttribute {
     DropPreemptionCount(PreemptionCount),
     ReportPreeptionCount,
     DumpMir,
+    /// Make an item known to klint as special.
+    ///
+    /// This is similar to `rustc_diagnostic_item` in the Rust standard library.
+    DiagnosticItem(Symbol),
 }
 
 struct Cursor<'a> {
@@ -454,6 +458,26 @@ impl<'tcx> AttrParser<'tcx> {
             )),
             crate::symbol::report_preempt_count => Some(KlintAttribute::ReportPreeptionCount),
             crate::symbol::dump_mir => Some(KlintAttribute::DumpMir),
+            crate::symbol::diagnostic_item => {
+                let AttrArgs::Eq {
+                    eq_span: _,
+                    expr:
+                        MetaItemLit {
+                            kind: LitKind::Str(value, _),
+                            ..
+                        },
+                } = item.args
+                else {
+                    self.error(attr.span(), |diag| {
+                        diag.help(
+                            r#"correct usage looks like `#[kint::diagnostic_item = "name"]`"#,
+                        );
+                    })
+                    .ok()?;
+                };
+
+                Some(KlintAttribute::DiagnosticItem(value))
+            }
             _ => {
                 self.tcx.node_span_lint(
                     crate::INCORRECT_ATTRIBUTE,

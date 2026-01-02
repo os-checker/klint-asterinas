@@ -1,23 +1,23 @@
  WARN klint::atomic_context Unable to determine property for FFI function `gen_build_error`
  WARN klint::atomic_context Unable to determine property for FFI function `gen_build_error`
 error: this `build_error` reference is not optimized away
-  --> $DIR/build_error.rs:8:13
+  --> $DIR/build_error.rs:9:13
    |
- 8 |             rust_build_error();
+ 9 |             rust_build_error();
    |             ^^^^^^^^^^^^^^^^^^
 ...
-15 |     build_assert!(false);
+16 |     build_assert!(false);
    |     -------------------- in this macro invocation
    |
 note: which is called from here
-  --> $DIR/build_error.rs:20:5
+  --> $DIR/build_error.rs:21:5
    |
-20 |     inline_call();
+21 |     inline_call();
    |     ^^^^^^^^^^^^^
 note: reference contained in `fn gen_build_error`
-  --> $DIR/build_error.rs:19:1
+  --> $DIR/build_error.rs:20:1
    |
-19 | fn gen_build_error() {
+20 | fn gen_build_error() {
    | ^^^^^^^^^^^^^^^^^^^^
    = note: this error originates in the macro `build_assert` (in Nightly builds, run with -Z macro-backtrace for more info)
 

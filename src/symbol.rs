@@ -41,11 +41,14 @@ def! {
     sort,
     quicksort,
     partition,
+    diagnostic_item,
 
     any_context,
     atomic_context,
     atomic_context_only,
     process_context,
+
+    build_error,
 
     CONFIG_FRAME_WARN,
 }

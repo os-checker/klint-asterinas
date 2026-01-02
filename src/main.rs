@@ -62,6 +62,7 @@ mod atomic_context;
 mod attribute;
 mod binary_analysis;
 mod diagnostic;
+mod diagnostic_items;
 mod driver;
 mod infallible_allocation;
 mod lattice;
@@ -115,6 +116,20 @@ impl Callbacks for MyCallbacks {
                 })
             });
         }));
+    }
+
+    fn after_analysis<'tcx>(
+        &mut self,
+        _compiler: &rustc_interface::interface::Compiler,
+        tcx: TyCtxt<'tcx>,
+    ) -> rustc_driver::Compilation {
+        let cx = driver::cx::<MyCallbacks>(tcx);
+
+        // Ensure this query is run at least once, even without diagnostics emission, to
+        // catch duplicate item errors.
+        let _ = cx.klint_all_diagnostic_items();
+
+        rustc_driver::Compilation::Continue
     }
 }
 

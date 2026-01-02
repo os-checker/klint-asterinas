@@ -33,3 +33,10 @@ klint_stack_frame_limit_invalid =
 klint_stack_frame_too_large =
     stack size of `{$instance}` is {$stack_size} bytes, exceeds the {$frame_limit}-byte limit
     .note = the stack size is inferred from instruction `{$insn}` at {$section}+{$offset}
+
+klint_duplicate_diagnostic_item_in_crate =
+    duplicate klint diagnostic item in crate `{$crate_name}`: `{$name}`
+    .note = the diagnostic item is first defined in crate `{$orig_crate_name}`
+
+klint_diagnostic_item_first_defined =
+    the klint diagnostic item is first defined here

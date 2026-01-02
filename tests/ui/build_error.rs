@@ -1,4 +1,5 @@
 unsafe extern "C" {
+    #[klint::diagnostic_item = "build_error"]
     safe fn rust_build_error();
 }
 
