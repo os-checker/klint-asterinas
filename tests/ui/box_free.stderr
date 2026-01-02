@@ -1,5 +1,4 @@
  WARN klint::ctxt no klint metadata found for crate core
- WARN klint::ctxt no klint metadata found for crate alloc
 error: freeing the box expects the preemption count to be 0
   --> $DIR/box_free.rs:31:57
    |

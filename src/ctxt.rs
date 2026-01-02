@@ -11,7 +11,7 @@ use rustc_data_structures::sync::{DynSend, DynSync, MTLock, RwLock};
 use rustc_hir::def_id::{CrateNum, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
-use rustc_span::{DUMMY_SP, Span};
+use rustc_span::{DUMMY_SP, Span, sym};
 
 use crate::diagnostic::use_stack::UseSite;
 
@@ -197,10 +197,21 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         if result.is_none() {
-            warn!(
-                "no klint metadata found for crate {}",
-                self.tcx.crate_name(cnum)
-            );
+            let name = self.tcx.crate_name(cnum);
+
+            match name {
+                // If we're running with pre-built sysroot, none of the these will be available to klint.
+                // In such cases, stop emitting too much warnings (just keep the only for libcore).
+                sym::alloc
+                | sym::std
+                | sym::libc
+                | crate::symbol::rustc_std_workspace_core
+                | crate::symbol::rustc_std_workspace_alloc
+                | crate::symbol::std_detect => (),
+                _ => {
+                    warn!("no klint metadata found for crate {}", name);
+                }
+            }
         }
 
         guard.insert(cnum, result.clone());
