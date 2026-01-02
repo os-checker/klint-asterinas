@@ -11,7 +11,8 @@ use rustc_data_structures::sync::{DynSend, DynSync, MTLock, RwLock};
 use rustc_hir::def_id::{CrateNum, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
-use rustc_span::{DUMMY_SP, Span, sym};
+use rustc_session::config::OutputType;
+use rustc_span::{DUMMY_SP, Span};
 
 use crate::diagnostic::use_stack::UseSite;
 
@@ -161,57 +162,47 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         }
 
         let mut result = None;
+        let mut sysroot = false;
         for path in self.tcx.crate_extern_paths(cnum) {
-            let Some(ext) = path.extension() else {
+            if path.starts_with(&self.sess.opts.sysroot.default) {
+                sysroot = true;
                 continue;
-            };
-            if ext == "rlib" || ext == "rmeta" {
-                let klint_path = path.with_extension("klint");
-                if !klint_path.exists() {
-                    continue;
-                }
-                let conn = Connection::open_with_flags(
-                    &klint_path,
-                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-                )
-                .unwrap();
-
-                // Check the schema version matches the current version
-                let mut schema_ver = 0;
-                conn.pragma_query(None, "user_version", |r| {
-                    schema_ver = r.get::<_, u32>(0)?;
-                    Ok(())
-                })
-                .unwrap();
-
-                if schema_ver != SCHEMA_VERSION {
-                    info!(
-                        "schema version of {} mismatch, ignoring",
-                        klint_path.display()
-                    );
-                }
-
-                result = Some(Arc::new(MTLock::new(conn)));
-                break;
             }
+
+            let klint_path = path.with_extension("klint");
+            if !klint_path.exists() {
+                continue;
+            }
+            let conn = Connection::open_with_flags(
+                &klint_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .unwrap();
+
+            // Check the schema version matches the current version
+            let mut schema_ver = 0;
+            conn.pragma_query(None, "user_version", |r| {
+                schema_ver = r.get::<_, u32>(0)?;
+                Ok(())
+            })
+            .unwrap();
+
+            if schema_ver != SCHEMA_VERSION {
+                info!(
+                    "schema version of {} mismatch, ignoring",
+                    klint_path.display()
+                );
+            }
+
+            result = Some(Arc::new(MTLock::new(conn)));
+            break;
         }
 
-        if result.is_none() {
+        // If we're running with pre-built sysroot, none of the these will be available to klint.
+        // In such cases, stop emitting too much warnings (just keep the only for libcore).
+        if result.is_none() && !sysroot {
             let name = self.tcx.crate_name(cnum);
-
-            match name {
-                // If we're running with pre-built sysroot, none of the these will be available to klint.
-                // In such cases, stop emitting too much warnings (just keep the only for libcore).
-                sym::alloc
-                | sym::std
-                | sym::libc
-                | crate::symbol::rustc_std_workspace_core
-                | crate::symbol::rustc_std_workspace_alloc
-                | crate::symbol::std_detect => (),
-                _ => {
-                    warn!("no klint metadata found for crate {}", name);
-                }
-            }
+            warn!("no klint metadata found for crate {}", name);
         }
 
         guard.insert(cnum, result.clone());
@@ -299,20 +290,24 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         let output_filenames = tcx.output_filenames(());
-        let rmeta_path = rustc_session::output::filename_for_metadata(tcx.sess, output_filenames);
-        let rmeta_path = rmeta_path.as_path();
 
-        // Double check that the rmeta file is .rlib or .rmeta
-        let ext = rmeta_path.extension().unwrap();
-        let conn;
-        if ext == "rlib" || ext == "rmeta" {
-            let klint_out = rmeta_path.with_extension("klint");
-            let _ = std::fs::remove_file(&klint_out);
-            conn = Connection::open(&klint_out).unwrap();
+        // FIXME: This makes sure that we can find the correct name for .so files
+        // used for proc macros. But this is quite hacky.
+        let preferred_output = if output_filenames
+            .outputs
+            .contains_explicit_name(&OutputType::Exe)
+        {
+            OutputType::Exe
         } else {
-            info!("klint called on a binary crate");
-            conn = Connection::open_in_memory().unwrap();
-        }
+            OutputType::Metadata
+        };
+
+        let output_path = output_filenames.path(preferred_output);
+        let output_path = output_path.as_path();
+
+        let klint_out = output_path.with_extension("klint");
+        let _ = std::fs::remove_file(&klint_out);
+        let conn = Connection::open(&klint_out).unwrap();
 
         // Check the schema version matches the current version
         let mut schema_ver = 0;

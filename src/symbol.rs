@@ -41,9 +41,6 @@ def! {
     sort,
     quicksort,
     partition,
-    rustc_std_workspace_core,
-    rustc_std_workspace_alloc,
-    std_detect,
 
     any_context,
     atomic_context,

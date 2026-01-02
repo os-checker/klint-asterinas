@@ -9,7 +9,6 @@ error: dropping element of slice causes non-zero preemption count adjustment
    = note: adjustment for dropping `LockOnDrop` is 1
    = note: because slice can contain variable number of elements, adjustment for dropping the slice cannot be computed statically
 
- WARN klint::ctxt no klint metadata found for crate core
 note: reporting preemption count for instance `drop_sleep`
   --> $DIR/drop-slice.rs:24:1
    |
