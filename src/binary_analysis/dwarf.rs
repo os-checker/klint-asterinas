@@ -276,7 +276,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
         let eh_frame_section = load_section(object, &section_layout, ".eh_frame")?;
 
         let dwarf =
-            dwarf_sections.borrow(|section| gimli::EndianSlice::new(&section, gimli::LittleEndian));
+            dwarf_sections.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
         // SAFETY: erase lifetime. This is fine as `dwarf` will be dropped before `dwarf_sections`.
         let dwarf_transmute =
             unsafe { std::mem::transmute::<Dwarf<ReaderTy<'_>>, Dwarf<ReaderTy<'_>>>(dwarf) };
@@ -350,7 +350,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                     .ok_or(Error::UnexpectedDwarf("Referenced entry not found"))?;
 
                 let next_die = entries.current().unwrap();
-                return self.linkage_name(unit, next_die);
+                self.linkage_name(unit, next_die)
             }
 
             _ => Err(Error::UnexpectedDwarf("Unsupported reference type"))?,
@@ -369,7 +369,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
         while let Some(attr) = attrs.next()? {
             match attr.name() {
                 gimli::DW_AT_low_pc => {
-                    let Some(low_pc) = self.dwarf().attr_address(&unit, attr.value())? else {
+                    let Some(low_pc) = self.dwarf().attr_address(unit, attr.value())? else {
                         Err(Error::UnexpectedDwarf("DW_AT_low_pc is not an address"))?
                     };
 
@@ -561,12 +561,12 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                 "debug_lines referenced non-existent directory",
             ))?;
 
-            path.push(self.dwarf().attr_string(&unit, directory)?.to_string()?);
+            path.push(self.dwarf().attr_string(unit, directory)?.to_string()?);
         }
 
         path.push(
             self.dwarf()
-                .attr_string(&unit, file.path_name())?
+                .attr_string(unit, file.path_name())?
                 .to_string()?,
         );
 

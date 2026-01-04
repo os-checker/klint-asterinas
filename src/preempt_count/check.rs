@@ -409,7 +409,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             body,
             result: Ok(()),
         };
-        visitor.visit_body(&body);
+        visitor.visit_body(body);
         visitor.result
     }
 
@@ -748,9 +748,7 @@ memoize!(
         }
 
         let mir = crate::mir::drop_shim::build_drop_shim(cx, instance.def_id(), typing_env, ty);
-        let result = cx.indirect_check(typing_env, instance, &mir);
-
-        result
+        cx.indirect_check(typing_env, instance, &mir)
     }
 );
 
@@ -818,8 +816,6 @@ memoize!(
         }
 
         let mir = cx.analysis_instance_mir(instance.def);
-        let result = cx.indirect_check(typing_env, instance, mir);
-
-        result
+        cx.indirect_check(typing_env, instance, mir)
     }
 );

@@ -479,14 +479,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             .unwrap();
 
         let mir = crate::mir::drop_shim::build_drop_shim(self, instance.def_id(), typing_env, ty);
-        return self.report_body_expectation_error(
-            typing_env,
-            instance,
-            &mir,
-            expected,
-            Some(span),
-            diag,
-        );
+        self.report_body_expectation_error(typing_env, instance, &mir, expected, Some(span), diag)
     }
 
     pub fn do_infer_expectation(

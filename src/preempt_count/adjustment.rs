@@ -231,7 +231,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             match data.terminator().kind {
                 TerminatorKind::Return => {
                     analysis_result.seek_to_block_start(b);
-                    adjustment.join(&analysis_result.get());
+                    adjustment.join(analysis_result.get());
                 }
                 _ => (),
             }

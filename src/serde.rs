@@ -166,7 +166,7 @@ macro_rules! encoder_methods {
     }
 }
 
-impl<'a, 'tcx> Encoder for EncodeContext<'tcx> {
+impl<'tcx> Encoder for EncodeContext<'tcx> {
     encoder_methods! {
         emit_usize(usize);
         emit_u128(u128);

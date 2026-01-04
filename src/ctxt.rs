@@ -302,7 +302,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         })
         .unwrap();
         conn.execute("begin immediate", ()).unwrap();
-        conn.pragma_update(None, "user_version", &SCHEMA_VERSION)
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
             .unwrap();
 
         let ret = Self {

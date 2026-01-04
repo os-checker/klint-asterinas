@@ -87,7 +87,7 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
             // Anything (directly) called by assume_fallible is considered to be fallible.
             if name.contains("assume_fallible") {
                 visited.insert(*accessee);
-                for accessor in forward.get(&accessee).unwrap_or(&Vec::new()) {
+                for accessor in forward.get(accessee).unwrap_or(&Vec::new()) {
                     visited.insert(accessor.node);
                 }
                 continue;
@@ -151,7 +151,7 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
             }
 
             // Fast path
-            if !infallible.contains(&accessor) {
+            if !infallible.contains(accessor) {
                 continue;
             }
 
@@ -174,7 +174,7 @@ impl<'tcx> LateLintPass<'tcx> for InfallibleAllocation {
                         .tcx
                         .def_path_str_with_args(accessee.def_id(), accessee.args);
 
-                    cx.span_lint(&INFALLIBLE_ALLOCATION, item.span, |diag| {
+                    cx.span_lint(INFALLIBLE_ALLOCATION, item.span, |diag| {
                         diag.primary_message(format!(
                             "`{}` can perform infallible allocation{}",
                             accessee_path, generic_note
