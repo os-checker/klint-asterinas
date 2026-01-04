@@ -274,25 +274,29 @@ impl<'tcx> AnalysisCtxt<'tcx> {
     }
 
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
-        let output_filenames = tcx.output_filenames(());
+        let conn = if tcx.needs_metadata() {
+            let output_filenames = tcx.output_filenames(());
 
-        // FIXME: This makes sure that we can find the correct name for .so files
-        // used for proc macros. But this is quite hacky.
-        let preferred_output = if output_filenames
-            .outputs
-            .contains_explicit_name(&OutputType::Exe)
-        {
-            OutputType::Exe
+            // FIXME: This makes sure that we can find the correct name for .so files
+            // used for proc macros. But this is quite hacky.
+            let preferred_output = if output_filenames
+                .outputs
+                .contains_explicit_name(&OutputType::Exe)
+            {
+                OutputType::Exe
+            } else {
+                OutputType::Metadata
+            };
+
+            let output_path = output_filenames.path(preferred_output);
+            let output_path = output_path.as_path();
+
+            let klint_out = output_path.with_extension("klint");
+            let _ = std::fs::remove_file(&klint_out);
+            Connection::open(&klint_out).unwrap()
         } else {
-            OutputType::Metadata
+            Connection::open_in_memory().unwrap()
         };
-
-        let output_path = output_filenames.path(preferred_output);
-        let output_path = output_path.as_path();
-
-        let klint_out = output_path.with_extension("klint");
-        let _ = std::fs::remove_file(&klint_out);
-        let conn = Connection::open(&klint_out).unwrap();
 
         // Check the schema version matches the current version
         let mut schema_ver = 0;
