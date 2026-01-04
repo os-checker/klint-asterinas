@@ -154,7 +154,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 continue;
             }
 
-            let klint_path = path.with_extension("klint");
+            let klint_path = path.with_extension("klint.rmeta");
             if !klint_path.exists() {
                 continue;
             }
@@ -291,7 +291,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             let output_path = output_filenames.path(preferred_output);
             let output_path = output_path.as_path();
 
-            let klint_out = output_path.with_extension("klint");
+            let klint_out = output_path.with_extension("klint.rmeta");
             let _ = std::fs::remove_file(&klint_out);
             Connection::open(&klint_out).unwrap()
         } else {
