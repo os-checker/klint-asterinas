@@ -416,7 +416,7 @@ impl<'tcx> AttrParser<'tcx> {
         let Attribute::Unparsed(item) = attr else {
             return None;
         };
-        if item.path.segments[0].name != crate::symbol::klint {
+        if item.path.segments[0] != crate::symbol::klint {
             return None;
         };
         if item.path.segments.len() != 2 {
@@ -426,7 +426,7 @@ impl<'tcx> AttrParser<'tcx> {
                 });
             return None;
         }
-        match item.path.segments[1].name {
+        match item.path.segments[1] {
             // Shorthands
             crate::symbol::any_context | crate::symbol::atomic_context => {
                 Some(KlintAttribute::PreemptionCount(PreemptionCount {
@@ -482,7 +482,7 @@ impl<'tcx> AttrParser<'tcx> {
                 self.tcx.node_span_lint(
                     crate::INCORRECT_ATTRIBUTE,
                     self.hir_id,
-                    item.path.segments[1].span,
+                    item.path.span,
                     |lint| {
                         lint.primary_message("unrecognized klint attribute");
                     },
