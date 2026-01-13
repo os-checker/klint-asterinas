@@ -126,19 +126,14 @@ impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
             .backend
             .join_codegen(ongoing_codegen, tcx.sess, outputs);
 
+        self.callback.lock().unwrap().after_codegen(cx::<C>(tcx));
+
         // `tcx` is going to destroyed. Let's get back the copy.
         let tcx_addr = *tcx as *const _ as usize;
         let cx = TCX_EXT_MAP.lock().unwrap().remove(&tcx_addr).unwrap();
         assert!(cx.is::<C::ExtCtxt<'static>>());
         // SAFETY: we just check the (type-erased) type matches.
-        let cx = unsafe { Box::from_raw(Box::into_raw(cx) as *mut C::ExtCtxt<'tcx>) };
-
-        // SAFETY: one last lifetime extension just to make the signature nice.
-        // This is fine as `tcx` is going to be destroyed.
-        self.callback
-            .lock()
-            .unwrap()
-            .after_codegen(unsafe { &*&raw const *cx });
+        drop(unsafe { Box::from_raw(Box::into_raw(cx) as *mut C::ExtCtxt<'tcx>) });
 
         Box::new((cg, work_map))
     }
