@@ -50,7 +50,7 @@ use rustc_driver::Callbacks;
 use rustc_interface::interface::Config;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::EarlyDiagCtxt;
-use rustc_session::config::{ErrorOutputType, OutputType};
+use rustc_session::config::{DebugInfo, ErrorOutputType, OutputType};
 use std::sync::atomic::Ordering;
 
 use crate::ctxt::AnalysisCtxt;
@@ -84,6 +84,17 @@ struct MyCallbacks;
 
 impl Callbacks for MyCallbacks {
     fn config(&mut self, config: &mut Config) {
+        match config.opts.debuginfo {
+            DebugInfo::LineDirectivesOnly | DebugInfo::LineTablesOnly => {
+                // If we only have line tables, then we cannot reliable reconstruct call graphs from DWARF,
+                // as the DWARF info lacks the linkage name attributes, so we do not know the generics info
+                // on functions.
+                let early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
+                early_dcx.early_warn("klint does not work with `-C debuginfo=line-tables-only`. Use `-C debuginfo=limited` instead.");
+            }
+            _ => (),
+        }
+
         config.locale_resources.push(crate::DEFAULT_LOCALE_RESOURCE);
         config.extra_symbols = crate::symbol::EXTRA_SYMBOLS.to_owned();
 
@@ -151,8 +162,8 @@ impl driver::CallbacksExt for MyCallbacks {
 }
 
 fn main() {
-    let handler = EarlyDiagCtxt::new(ErrorOutputType::default());
-    rustc_driver::init_logger(&handler, rustc_log::LoggerConfig::from_env("KLINT_LOG"));
+    let early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
+    rustc_driver::init_logger(&early_dcx, rustc_log::LoggerConfig::from_env("KLINT_LOG"));
     let args: Vec<_> = std::env::args().collect();
 
     driver::run_compiler(&args, MyCallbacks);
