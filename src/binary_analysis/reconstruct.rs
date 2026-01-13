@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use rustc_data_structures::fx::FxHashMap;
+use rustc_hir::LangItem;
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{Instance, TyCtxt};
 use rustc_middle::{mir, ty};
@@ -144,6 +145,30 @@ pub fn recover_fn_call_span<'tcx>(
                     drop_span: terminator.source_info.span,
                     place_span: mir.local_decls[place.local].source_info.span,
                 });
+            }
+
+            // If MIR has an assertion terminator, we should find the corresponding language
+            // item and recover from there.
+            mir::TerminatorKind::Assert { ref msg, .. } => {
+                let lang_item = match **msg {
+                    mir::AssertKind::BoundsCheck { .. } => LangItem::PanicBoundsCheck,
+                    mir::AssertKind::MisalignedPointerDereference { .. } => {
+                        LangItem::PanicMisalignedPointerDereference
+                    }
+                    _ => msg.panic_function(),
+                };
+
+                let def_id = tcx.require_lang_item(lang_item, terminator.source_info.span);
+                let instance = Instance::mono(tcx, def_id);
+                if tcx.symbol_name(instance).name != callee {
+                    continue;
+                }
+
+                callee_instance = Some(instance);
+                sites.push(UseSiteKind::Other(
+                    terminator.source_info.span,
+                    "assert".to_owned(),
+                ));
             }
 
             _ => continue,
