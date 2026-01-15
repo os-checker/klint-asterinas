@@ -101,7 +101,7 @@ impl Callbacks for MyCallbacks {
         config.override_queries = Some(|_, provider| {
             // Calling `optimized_mir` will steal the result of query `mir_drops_elaborated_and_const_checked`,
             // so hijack `optimized_mir` to run `analysis_mir` first.
-            hook_query!(provider.optimized_mir => |tcx, local_def_id, original| {
+            hook_query!(provider.queries.optimized_mir => |tcx, local_def_id, original| {
                 let def_id = local_def_id.to_def_id();
                 // Skip `analysis_mir` call if this is a constructor, since it will be delegated back to
                 // `optimized_mir` for building ADT constructor shim.
