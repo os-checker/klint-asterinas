@@ -64,6 +64,7 @@ mod binary_analysis;
 mod diagnostic;
 mod diagnostic_items;
 mod driver;
+mod hir_lints;
 mod infallible_allocation;
 mod lattice;
 mod mir;
@@ -119,7 +120,15 @@ impl Callbacks for MyCallbacks {
                 infallible_allocation::INFALLIBLE_ALLOCATION,
                 atomic_context::ATOMIC_CONTEXT,
                 binary_analysis::stack_size::STACK_FRAME_TOO_LARGE,
+                hir_lints::not_using_prelude::NOT_USING_PRELUDE,
             ]);
+
+            lint_store.register_late_pass(|tcx| {
+                Box::new(hir_lints::not_using_prelude::NotUsingPrelude {
+                    cx: driver::cx::<MyCallbacks>(tcx),
+                })
+            });
+
             // lint_store
             //     .register_late_pass(|_| Box::new(infallible_allocation::InfallibleAllocation));
             #[cfg(feature = "preempt_count")]
