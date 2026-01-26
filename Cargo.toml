@@ -8,10 +8,6 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
-[features]
-preempt_count = []
-default = ["preempt_count"]
-
 [dependencies]
 rusqlite = "0.37"
 home = "0.5"

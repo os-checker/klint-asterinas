@@ -62,7 +62,7 @@ use crate::preempt_count::*;
 
 declare_tool_lint! {
     pub klint::ATOMIC_CONTEXT,
-    Deny,
+    Allow,
     ""
 }
 

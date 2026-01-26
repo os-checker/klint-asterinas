@@ -31,10 +31,8 @@ nix run github:Rust-for-Linux/klint
 
 ## Run on Linux kernel
 
-`klint`'s atomic context checker is not lint-clean on Linux kernel tree.
-If you would just like to use the `build_error` and stack frame size check feature, you can choose to disable atomic context checking when building `klint`:
 ```console
-cargo install --path . --no-default-features
+cargo install --path .
 ```
 
 `klint` is a tool and would need to be registered with `rustc`, to do so, apply [this patch](doc/kernel.patch) to the kernel tree.
@@ -42,9 +40,13 @@ This patch can be used even if plain rustc or clippy is used for kernel build.
 
 To run this tool for Linux kernel build, use `make RUSTC=<path to klint>` to use klint in place of a Rust compiler.
 
+`klint`'s atomic context checker is not lint-clean on Linux kernel tree.
+If you want to check it out, you can opt into it with `-Dklint::atomic_context`.
+
 ## Implemented Lints
 
 * [Infallible allocation](doc/infallible_allocation.md)
 * [Atomic context](doc/atomic_context.md)
 * [`build_error` checks](doc/build_error.md)
 * [Stack frame size check](doc/stack_size.md)
+* [Prelude check](doc/not_using_prelude.md)

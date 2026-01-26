@@ -29,6 +29,7 @@ fn run_ui_tests(bless: bool) {
             "-Zcrate-attr=register_tool(klint)",
             "--crate-type=lib",
             "-Zcrate-attr=no_std",
+            "-Dklint::atomic_context",
             "--extern alloc",
             "--emit=obj",
             "-O",
