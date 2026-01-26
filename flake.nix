@@ -62,6 +62,13 @@
 
               buildInputs = with pkgs; [ sqlite ];
               doCheck = false;
+
+              # If kernel rustdoc tests are enabled, user would need a matching version of rustdoc.
+              postInstall = ''
+                ln -s "${lib.getExe' rustc "rustdoc"}" $out/bin/klint-rustdoc
+              '';
+
+              passthru.rustc = rustc;
             };
 
         formatter = pkgs.nixfmt-tree;

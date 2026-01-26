@@ -40,6 +40,9 @@ This patch can be used even if plain rustc or clippy is used for kernel build.
 
 To run this tool for Linux kernel build, use `make RUSTC=<path to klint>` to use klint in place of a Rust compiler.
 
+If you compile kernel with rustdoc tests as kunit tests, you also need a matching version of `rustdoc`.
+For Nix users, this is available as symlink `klint-rustdoc`, you can use add `RUSTDOC=klint-rustdoc` to make command line.
+
 `klint`'s atomic context checker is not lint-clean on Linux kernel tree.
 If you want to check it out, you can opt into it with `-Dklint::atomic_context`.
 
