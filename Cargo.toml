@@ -7,6 +7,7 @@ name = "klint"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+default-run = "klint"
 
 [dependencies]
 rusqlite = "0.37"
@@ -17,6 +18,14 @@ iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "d
 
 [dev-dependencies]
 compiletest_rs = { version = "0.11", features = [ "tmp" ] }
+
+[[bin]]
+name = "klint"
+path = "src/main.rs"
+
+[[bin]]
+name = "klint-rustdoc"
+path = "src/rustdoc.rs"
 
 [package.metadata.rust-analyzer]
 # This crate uses #![feature(rustc_private)]

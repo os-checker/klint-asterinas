@@ -17,4 +17,16 @@ fn main() {
     // binary would be missing the necessary RPATH so it cannot run without using Cargo.
     let sysroot = probe_sysroot();
     println!("cargo::rustc-link-arg=-Wl,-rpath={sysroot}/lib");
+
+    // If the RUSTDOC environment variable is just a plain "rustdoc", we want to discover the full path.
+    // NB: this is the case when built from nix.
+    let mut rustdoc = std::env::var("RUSTDOC").unwrap_or_default();
+    if rustdoc.is_empty() || rustdoc == "rustdoc" {
+        rustdoc = format!("{sysroot}/bin/rustdoc");
+        assert!(
+            std::fs::exists(&rustdoc).unwrap_or_default(),
+            "Cannot find RUSTDOC. This is an unknown environment, please file a bug report."
+        );
+    }
+    println!("cargo::rustc-env=RUSTDOC={rustdoc}");
 }

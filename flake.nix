@@ -64,8 +64,10 @@
               doCheck = false;
 
               # If kernel rustdoc tests are enabled, user would need a matching version of rustdoc.
+              # klint provides a klint-rustdoc binary to ease the process. However, for nix, we already
+              # know the path to the rustdoc binary, so just symlink and replace the wrapper.
               postInstall = ''
-                ln -s "${lib.getExe' rustc "rustdoc"}" $out/bin/klint-rustdoc
+                ln -sf "${lib.getExe' rustc "rustdoc"}" $out/bin/klint-rustdoc
               '';
 
               passthru.rustc = rustc;
