@@ -111,10 +111,6 @@ pub struct BackendWrapper<C> {
 }
 
 impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
-    fn locale_resource(&self) -> &'static str {
-        self.backend.locale_resource()
-    }
-
     fn name(&self) -> &'static str {
         self.backend.name()
     }
