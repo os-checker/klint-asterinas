@@ -14,13 +14,13 @@ use crate::ctxt::{AnalysisCtxt, QueryValueDecodable};
 use crate::{attribute::KlintAttribute, ctxt::PersistentQuery};
 
 #[derive(Diagnostic)]
-#[diag(klint_duplicate_diagnostic_item_in_crate)]
+#[diag("duplicate klint diagnostic item in crate `{$crate_name}`: `{$name}`")]
 struct DuplicateDiagnosticItemInCrate {
     #[primary_span]
     pub duplicate_span: Option<Span>,
-    #[note(klint_diagnostic_item_first_defined)]
+    #[note("the klint diagnostic item is first defined here")]
     pub orig_span: Option<Span>,
-    #[note]
+    #[note("the diagnostic item is first defined in crate `{$orig_crate_name}`")]
     pub different_crates: bool,
     pub crate_name: Symbol,
     pub orig_crate_name: Symbol,

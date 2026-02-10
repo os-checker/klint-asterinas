@@ -29,7 +29,6 @@ extern crate rustc_codegen_ssa;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;
-extern crate rustc_fluent_macro;
 extern crate rustc_hir;
 extern crate rustc_index;
 extern crate rustc_infer;
@@ -96,7 +95,6 @@ impl Callbacks for MyCallbacks {
             _ => (),
         }
 
-        config.locale_resources.push(crate::DEFAULT_LOCALE_RESOURCE);
         config.extra_symbols = crate::symbol::EXTRA_SYMBOLS.to_owned();
 
         config.override_queries = Some(|_, provider| {
@@ -176,5 +174,3 @@ fn main() {
 
     driver::run_compiler(&args, MyCallbacks);
 }
-
-rustc_fluent_macro::fluent_messages! { "./messages.ftl" }

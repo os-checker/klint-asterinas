@@ -39,7 +39,7 @@ use std::cell::OnceCell;
 
 // From rustc_monomorphize/errors.rs
 #[derive(Diagnostic)]
-#[diag(klint_monomorphize_encountered_error_while_instantiating)]
+#[diag("the above error was encountered while instantiating `{$kind} {$instance}`")]
 struct EncounteredErrorWhileInstantiating<'tcx> {
     #[primary_span]
     pub span: Span,
@@ -48,19 +48,19 @@ struct EncounteredErrorWhileInstantiating<'tcx> {
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_monomorphize_encountered_error_while_instantiating_global_asm)]
+#[diag("the above error was encountered while instantiating `global_asm`")]
 struct EncounteredErrorWhileInstantiatingGlobalAsm {
     #[primary_span]
     pub span: Span,
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_monomorphize_recursion_limit)]
+#[diag("reached the recursion limit while instantiating `{$instance}`")]
 struct RecursionLimit<'tcx> {
     #[primary_span]
     pub span: Span,
     pub instance: Instance<'tcx>,
-    #[note]
+    #[note("`{$def_path_str}` defined here")]
     pub def_span: Span,
     pub def_path_str: String,
 }

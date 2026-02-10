@@ -19,8 +19,8 @@ declare_tool_lint! {
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_stack_frame_limit_missing)]
-#[help(klint_stack_frame_limit_help)]
+#[diag("stack size limit is not set, default to {$default} bytes")]
+#[help("set stack size limit with `--cfg CONFIG_FRAME_WARN=\"<size-in-bytes>\"`")]
 struct StackFrameLimitMissing {
     #[primary_span]
     pub span: Span,
@@ -28,8 +28,8 @@ struct StackFrameLimitMissing {
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_stack_frame_limit_invalid)]
-#[help(klint_stack_frame_limit_help)]
+#[diag("stack size limit is set to `{$setting}` bytes, which cannot be parsed as integer")]
+#[help("set stack size limit with `--cfg CONFIG_FRAME_WARN=\"<size-in-bytes>\"`")]
 struct StackFrameLimitInvalid {
     #[primary_span]
     pub span: Span,
@@ -37,8 +37,8 @@ struct StackFrameLimitInvalid {
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_stack_frame_too_large)]
-#[note]
+#[diag("stack size of `{$instance}` is {$stack_size} bytes, exceeds the {$frame_limit}-byte limit")]
+#[note("the stack size is inferred from instruction `{$insn}` at {$section}+{$offset}")]
 struct StackFrameTooLarge<'a, 'tcx> {
     pub section: &'a str,
     pub offset: u64,

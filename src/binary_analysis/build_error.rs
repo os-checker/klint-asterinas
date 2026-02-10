@@ -7,18 +7,20 @@ use crate::ctxt::AnalysisCtxt;
 use crate::diagnostic::use_stack::{UseSite, UseSiteKind};
 
 #[derive(Diagnostic)]
-#[diag(klint_build_error_referenced_without_symbol)]
+#[diag("found a reference to `build_error` in the object file, but no associated symbol is found")]
 struct BuildErrorReferencedWithoutSymbol;
 
 #[derive(Diagnostic)]
-#[diag(klint_build_error_referenced_without_instance)]
+#[diag(
+    "symbol `{$symbol}` references `build_error` in the object file, but no associated instance is found"
+)]
 struct BuildErrorReferencedWithoutInstance<'a> {
     pub symbol: &'a str,
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_build_error_referenced_without_debug)]
-#[note]
+#[diag("`{$kind} {$instance}` contains reference to `build_error`")]
+#[note("attempt to reconstruct line information from DWARF failed: {$err}")]
 struct BuildErrorReferencedWithoutDebug<'tcx> {
     #[primary_span]
     pub span: Span,
@@ -28,7 +30,7 @@ struct BuildErrorReferencedWithoutDebug<'tcx> {
 }
 
 #[derive(Diagnostic)]
-#[diag(klint_build_error_referenced)]
+#[diag("this `build_error` reference is not optimized away")]
 struct BuildErrorReferenced;
 
 pub fn build_error_detection<'tcx, 'obj>(cx: &AnalysisCtxt<'tcx>, file: &File<'obj>) {
