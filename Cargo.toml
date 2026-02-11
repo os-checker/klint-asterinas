@@ -13,7 +13,7 @@ default-run = "klint"
 rusqlite = "0.37"
 home = "0.5"
 object = "0.38.0"
-gimli = "0.32.3"
+gimli = "0.33"
 iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder", "gas"] }
 
 [dev-dependencies]

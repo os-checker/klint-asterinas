@@ -298,13 +298,12 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
     fn linkage_name(
         &self,
         unit: &Unit<ReaderTy<'_>>,
-        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_>>,
+        die: &DebuggingInformationEntry<ReaderTy<'_>>,
     ) -> Result<String, Error> {
-        let mut attrs = die.attrs();
         let mut name = None;
         let mut deleg = None;
 
-        while let Some(attr) = attrs.next()? {
+        for attr in die.attrs() {
             match attr.name() {
                 gimli::DW_AT_linkage_name => {
                     return Ok(self
@@ -347,6 +346,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                 let mut entries = unit.entries_at_offset(offset)?;
                 entries
                     .next_entry()?
+                    .then_some(())
                     .ok_or(Error::UnexpectedDwarf("Referenced entry not found"))?;
 
                 let next_die = entries.current().unwrap();
@@ -361,19 +361,18 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
     fn ranges(
         &self,
         unit: &Unit<ReaderTy<'_>>,
-        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_>>,
+        die: &DebuggingInformationEntry<ReaderTy<'_>>,
     ) -> Result<(SectionIndex, Vec<Range<i64>>), Error> {
         let mut ranges = Vec::new();
 
-        let mut attrs = die.attrs();
-        while let Some(attr) = attrs.next()? {
+        for attr in die.attrs() {
             match attr.name() {
                 gimli::DW_AT_low_pc => {
                     let Some(low_pc) = self.dwarf().attr_address(unit, attr.value())? else {
                         Err(Error::UnexpectedDwarf("DW_AT_low_pc is not an address"))?
                     };
 
-                    let Some(high_pc) = die.attr_value(gimli::DW_AT_high_pc)? else {
+                    let Some(high_pc) = die.attr_value(gimli::DW_AT_high_pc) else {
                         Err(Error::UnexpectedDwarf(
                             "DW_AT_high_pc not found at DW_TAG_inlined_subroutine",
                         ))?
@@ -437,9 +436,9 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
     fn call_location(
         &self,
         unit: &Unit<ReaderTy<'_>>,
-        die: &DebuggingInformationEntry<'_, '_, ReaderTy<'_>>,
+        die: &DebuggingInformationEntry<ReaderTy<'_>>,
     ) -> Result<Option<Location>, Error> {
-        let Some(file) = die.attr(gimli::DW_AT_call_file)? else {
+        let Some(file) = die.attr(gimli::DW_AT_call_file) else {
             // This may happen when two calls from different files are merged.
             return Ok(None);
         };
@@ -454,7 +453,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
                 .ok_or(Error::UnexpectedDwarf("file number is not udata"))?,
         )?;
 
-        let Some(line) = die.attr(gimli::DW_AT_call_line)? else {
+        let Some(line) = die.attr(gimli::DW_AT_call_line) else {
             // This may happen when two calls from different lines are merged.
             return Ok(None);
         };
@@ -462,7 +461,7 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
             .udata_value()
             .ok_or(Error::UnexpectedDwarf("line number is not udata"))?;
 
-        let column = match die.attr(gimli::DW_AT_call_column)? {
+        let column = match die.attr(gimli::DW_AT_call_column) {
             None => 0,
             Some(column) => column
                 .udata_value()
@@ -485,10 +484,12 @@ impl<'file, 'data> DwarfLoader<'file, 'data> {
 
             let mut stack = Vec::new();
             let mut entries = unit.entries();
-            while let Some((depth, die)) = entries.next_dfs()? {
-                for _ in depth..=0 {
+            let mut prev_depth = 0;
+            while let Some(die) = entries.next_dfs()? {
+                for _ in die.depth()..=prev_depth {
                     stack.pop();
                 }
+                prev_depth = die.depth;
 
                 if matches!(
                     die.tag(),
