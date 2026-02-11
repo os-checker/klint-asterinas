@@ -58,6 +58,9 @@
               };
               cargoLock = {
                 lockFile = ./Cargo.lock;
+                outputHashes = {
+                  "compiletest_rs-0.11.2" = "sha256-kjdqn9MggFypzB6SVWAsNqD21wZYiv+dtPvyGNi/Wqo=";
+                };
               };
 
               buildInputs = with pkgs; [ sqlite ];

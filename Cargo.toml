@@ -30,3 +30,6 @@ path = "src/rustdoc.rs"
 [package.metadata.rust-analyzer]
 # This crate uses #![feature(rustc_private)]
 rustc_private = true
+
+[patch.crates-io]
+compiletest_rs = { git = "https://github.com/Manishearth/compiletest-rs", rev = "63663557c6a28c645c506f54d08111cf028e1ac8" }
