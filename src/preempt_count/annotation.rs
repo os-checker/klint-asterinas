@@ -42,7 +42,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 && data.len() == 3
                 && let DefPathData::TypeNs(crate::symbol::task) = data[0].data
                 && let DefPathData::TypeNs(crate::symbol::wake) = data[1].data
-                && let DefPathData::TypeNs(sym::Waker) = data[2].data
+                && let DefPathData::TypeNs(crate::symbol::Waker) = data[2].data
             {
                 if fn_name == sym::clone
                     || fn_name == crate::symbol::wake
@@ -63,7 +63,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
         if data.len() == 3
             && let DefPathData::TypeNs(sym::any) = data[0].data
-            && let DefPathData::TypeNs(sym::Any) = data[1].data
+            && let DefPathData::TypeNs(crate::symbol::Any) = data[1].data
             && let DefPathData::ValueNs(_any_fn) = data[2].data
         {
             // This is a `core::any::Any::_` function.
@@ -76,7 +76,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
         if data.len() == 3
             && let DefPathData::TypeNs(crate::symbol::error) = data[0].data
-            && let DefPathData::TypeNs(sym::Error) = data[1].data
+            && let DefPathData::TypeNs(crate::symbol::Error) = data[1].data
             && let DefPathData::ValueNs(_any_fn) = data[2].data
         {
             // This is a `core::error::Error::_` function.
