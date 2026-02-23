@@ -82,7 +82,7 @@ fn custom_coerce_unsize_info<'tcx>(
         Ok(traits::ImplSource::UserDefined(traits::ImplSourceUserDefinedData {
             impl_def_id,
             ..
-        })) => Ok(tcx.coerce_unsized_info(impl_def_id)?.custom_kind.unwrap()),
+        })) => Ok(tcx.coerce_unsized_info(*impl_def_id)?.custom_kind.unwrap()),
         impl_source => {
             bug!("invalid `CoerceUnsized` impl_source: {:?}", impl_source);
         }

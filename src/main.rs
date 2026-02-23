@@ -4,7 +4,6 @@
 
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-#![feature(if_let_guard)]
 #![feature(never_type)]
 #![feature(try_blocks)]
 // Used in monomorphize collector
