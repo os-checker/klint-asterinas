@@ -12,6 +12,12 @@ pub(crate) mod stack_size;
 
 pub fn binary_analysis<'tcx>(cx: &AnalysisCtxt<'tcx>, path: &Path) {
     let file = File::open(path).unwrap();
+    let meta = file.metadata().unwrap();
+    if !meta.is_file() {
+        // We cannot handle special devices (this can be e.g. /dev/null).
+        return;
+    }
+
     let mmap = unsafe { rustc_data_structures::memmap::Mmap::map(file) }.unwrap();
     let object = ObjectFile::parse(&*mmap).unwrap();
 

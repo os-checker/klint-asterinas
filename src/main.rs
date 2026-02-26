@@ -159,9 +159,20 @@ impl driver::CallbacksExt for MyCallbacks {
     }
 
     fn after_codegen<'tcx>(&mut self, cx: &'tcx AnalysisCtxt<'tcx>) {
+        // If compilation fails, do not attempt to perform binary analysis, as
+        // binary might not have been generated.
+        if cx.dcx().has_errors().is_some() {
+            return;
+        }
+
         let outputs = cx.output_filenames(());
         if outputs.outputs.contains_key(&OutputType::Object) {
-            binary_analysis::binary_analysis(cx, outputs.path(OutputType::Object).as_path());
+            let file = outputs.path(OutputType::Object);
+            // We cannot retrieve object back from stdout.
+            if file.is_stdout() {
+                return;
+            }
+            binary_analysis::binary_analysis(cx, file.as_path());
         }
     }
 }
