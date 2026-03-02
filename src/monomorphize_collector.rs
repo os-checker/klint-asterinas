@@ -1343,7 +1343,7 @@ impl<'v> RootCollector<'_, 'v> {
                 );
                 self.output.push(dummy_spanned(MonoItem::Static(def_id)));
             }
-            DefKind::Const => {
+            DefKind::Const { .. } => {
                 // Const items only generate mono items if they are actually used somewhere.
                 // Just declaring them is insufficient.
 

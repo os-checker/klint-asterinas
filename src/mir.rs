@@ -171,9 +171,9 @@ impl<'tcx> AnalysisCtxt<'tcx> {
             ty::InstanceKind::Item(did) => {
                 let def_kind = self.def_kind(did);
                 match def_kind {
-                    DefKind::Const
+                    DefKind::Const { .. }
                     | DefKind::Static { .. }
-                    | DefKind::AssocConst
+                    | DefKind::AssocConst { .. }
                     | DefKind::Ctor(..)
                     | DefKind::AnonConst
                     | DefKind::InlineConst => self.mir_for_ctfe(did),
