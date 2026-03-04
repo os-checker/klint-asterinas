@@ -4,7 +4,7 @@ use std::any::Any;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use rustc_codegen_ssa::traits::CodegenBackend;
-use rustc_codegen_ssa::{CodegenResults, TargetConfig};
+use rustc_codegen_ssa::{CompiledModules, CrateInfo, TargetConfig};
 use rustc_data_structures::fx::{FxHashMap, FxIndexMap};
 use rustc_data_structures::sync::{DynSend, DynSync};
 use rustc_driver::{Callbacks, Compilation};
@@ -115,8 +115,12 @@ impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
         self.backend.name()
     }
 
-    fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Box<dyn Any> {
-        let ongoing_codegen = self.backend.codegen_crate(tcx);
+    fn target_cpu(&self, sess: &Session) -> String {
+        self.backend.target_cpu(sess)
+    }
+
+    fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>, crate_info: &CrateInfo) -> Box<dyn Any> {
+        let ongoing_codegen = self.backend.codegen_crate(tcx, crate_info);
         let outputs = tcx.output_filenames(());
         let (cg, work_map) = self
             .backend
@@ -139,7 +143,7 @@ impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
         ongoing_codegen: Box<dyn Any>,
         _sess: &Session,
         _outputs: &OutputFilenames,
-    ) -> (CodegenResults, FxIndexMap<WorkProductId, WorkProduct>) {
+    ) -> (CompiledModules, FxIndexMap<WorkProductId, WorkProduct>) {
         *ongoing_codegen.downcast().unwrap()
     }
 
@@ -174,11 +178,13 @@ impl<C: CallbacksExt> CodegenBackend for BackendWrapper<C> {
     fn link(
         &self,
         sess: &Session,
-        codegen_results: CodegenResults,
+        compiled_modules: CompiledModules,
+        crate_info: CrateInfo,
         metadata: EncodedMetadata,
         outputs: &OutputFilenames,
     ) {
-        self.backend.link(sess, codegen_results, metadata, outputs)
+        self.backend
+            .link(sess, compiled_modules, crate_info, metadata, outputs)
     }
 }
 
