@@ -6,7 +6,7 @@ use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc_hir::{Item, ItemKind, UseKind};
 use rustc_lint::{LateContext, LateLintPass, LintContext};
 use rustc_session::{declare_tool_lint, impl_lint_pass};
-use rustc_span::{Span, Symbol, sym};
+use rustc_span::{Symbol, sym};
 
 use crate::ctxt::AnalysisCtxt;
 
@@ -28,8 +28,6 @@ impl_lint_pass!(NotUsingPrelude<'_> => [NOT_USING_PRELUDE]);
 #[diag("this item is available via prelude")]
 #[help("import with `{$crate_name}::prelude::*` instead")]
 struct NotUsingPreludeLint {
-    #[primary_span]
-    pub span: Span,
     pub crate_name: Symbol,
 }
 
@@ -66,12 +64,10 @@ impl<'tcx> LateLintPass<'tcx> for NotUsingPrelude<'tcx> {
         let cnum = prelude.get(&imported_def_id).copied().unwrap();
         let crate_name = self.cx.crate_name(cnum);
 
-        cx.emit_diag_lint(
+        cx.emit_span_lint(
             NOT_USING_PRELUDE,
-            NotUsingPreludeLint {
-                span: item.span,
-                crate_name,
-            },
+            item.span,
+            NotUsingPreludeLint { crate_name },
         );
     }
 }

@@ -79,8 +79,9 @@ impl<'tcx> LateLintPass<'tcx> for CStrLiteralLint<'tcx> {
 
         if let Some(arg) = self.extract_arg(expn_data.call_site) {
             if arg.starts_with('"') && arg.ends_with('"') {
-                cx.emit_diag_lint(
+                cx.emit_span_lint(
                     C_STR_LITERAL,
+                    expn_data.call_site,
                     CStrLiteral {
                         span: expn_data.call_site,
                         macro_name: self.cx.item_name(c_str),
