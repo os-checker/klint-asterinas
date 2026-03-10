@@ -44,6 +44,7 @@ def! {
     sort,
     quicksort,
     partition,
+    kernel,
     diagnostic_item,
 
     any_context,
@@ -51,6 +52,8 @@ def! {
     atomic_context_only,
     process_context,
 
+    // Diagnostic items
+    c_str,
     build_error,
 
     CONFIG_FRAME_WARN,

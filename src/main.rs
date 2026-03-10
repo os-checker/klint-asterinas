@@ -117,8 +117,15 @@ impl Callbacks for MyCallbacks {
                 infallible_allocation::INFALLIBLE_ALLOCATION,
                 atomic_context::ATOMIC_CONTEXT,
                 binary_analysis::stack_size::STACK_FRAME_TOO_LARGE,
+                hir_lints::c_str_literal::C_STR_LITERAL,
                 hir_lints::not_using_prelude::NOT_USING_PRELUDE,
             ]);
+
+            lint_store.register_late_pass(|tcx| {
+                Box::new(hir_lints::c_str_literal::CStrLiteralLint {
+                    cx: driver::cx::<MyCallbacks>(tcx),
+                })
+            });
 
             lint_store.register_late_pass(|tcx| {
                 Box::new(hir_lints::not_using_prelude::NotUsingPrelude {
