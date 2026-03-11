@@ -73,12 +73,6 @@ mod symbol;
 mod util;
 mod utils;
 
-rustc_session::declare_tool_lint! {
-    pub klint::INCORRECT_ATTRIBUTE,
-    Forbid,
-    "Incorrect usage of klint attributes"
-}
-
 struct MyCallbacks;
 
 impl Callbacks for MyCallbacks {
@@ -113,7 +107,6 @@ impl Callbacks for MyCallbacks {
         });
         config.register_lints = Some(Box::new(move |_, lint_store| {
             lint_store.register_lints(&[
-                INCORRECT_ATTRIBUTE,
                 infallible_allocation::INFALLIBLE_ALLOCATION,
                 atomic_context::ATOMIC_CONTEXT,
                 binary_analysis::stack_size::STACK_FRAME_TOO_LARGE,

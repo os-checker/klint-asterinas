@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use rustc_ast::tokenstream::{self, TokenTree};
 use rustc_ast::{DelimArgs, LitKind, MetaItemLit, token};
-use rustc_errors::{Diag, ErrorGuaranteed};
+use rustc_errors::ErrorGuaranteed;
 use rustc_hir::{AttrArgs, AttrItem, Attribute, HirId};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::symbol::Ident;
@@ -43,6 +43,37 @@ pub enum KlintAttribute {
     DiagnosticItem(Symbol),
 }
 
+#[derive(Diagnostic)]
+#[diag("incorrect usage of `#[kint::preempt_count]`")]
+#[help("{$help}")]
+struct InvalidPreemptCountAttribute {
+    #[primary_span]
+    pub span: Span,
+    pub help: &'static str,
+}
+
+#[derive(Diagnostic)]
+#[diag("unrecognized klint attribute")]
+struct UnknownAttribute {
+    #[primary_span]
+    pub span: Span,
+}
+
+#[derive(Diagnostic)]
+#[diag("invalid klint attribute")]
+struct InvalidAttribute {
+    #[primary_span]
+    pub span: Span,
+}
+
+#[derive(Diagnostic)]
+#[diag("incorrect usage of `#[kint::diagnostic_item]`")]
+#[help(r#"correct usage looks like `#[kint::diagnostic_item = "name"]`"#)]
+struct InvalidDiagnosticItem {
+    #[primary_span]
+    pub span: Span,
+}
+
 struct Cursor<'a> {
     eof: TokenTree,
     cursor: tokenstream::TokenStreamIter<'a>,
@@ -75,26 +106,9 @@ impl<'a> Cursor<'a> {
 
 struct AttrParser<'tcx> {
     tcx: TyCtxt<'tcx>,
-    hir_id: HirId,
 }
 
 impl<'tcx> AttrParser<'tcx> {
-    fn error(
-        &self,
-        span: Span,
-        decorate: impl for<'a, 'b> FnOnce(&'b mut Diag<'a, ()>),
-    ) -> Result<!, ErrorGuaranteed> {
-        self.tcx
-            .node_span_lint(crate::INCORRECT_ATTRIBUTE, self.hir_id, span, |lint| {
-                lint.primary_message("incorrect usage of `#[kint::preempt_count]`");
-                decorate(lint);
-            });
-        Err(self
-            .tcx
-            .dcx()
-            .span_delayed_bug(span, "incorrect usage of `#[kint::preempt_count]`"))
-    }
-
     fn parse_comma_delimited(
         &self,
         mut cursor: Cursor<'_>,
@@ -123,9 +137,10 @@ impl<'tcx> AttrParser<'tcx> {
                     _
                 )
             ) {
-                self.error(comma.span(), |diag| {
-                    diag.help("`,` expected between property values");
-                })?;
+                Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                    span: comma.span(),
+                    help: "`,` expected between property values",
+                }))?
             }
         }
     }
@@ -137,17 +152,18 @@ impl<'tcx> AttrParser<'tcx> {
         f: impl FnOnce(Ident, Cursor<'a>) -> Result<Cursor<'a>, ErrorGuaranteed>,
     ) -> Result<Cursor<'a>, ErrorGuaranteed> {
         let prop = cursor.next();
-        let invalid_prop = |span| {
-            self.error(span, |diag| {
-                diag.help("identifier expected");
-            })?;
-        };
 
         let TokenTree::Token(token, _) = prop else {
-            return invalid_prop(prop.span());
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: prop.span(),
+                help: "identifier expected",
+            }))?
         };
         let Some((name, _)) = token.ident() else {
-            return invalid_prop(token.span);
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: token.span,
+                help: "identifier expected",
+            }))?
         };
 
         let need_eq = need_eq(name)?;
@@ -165,14 +181,16 @@ impl<'tcx> AttrParser<'tcx> {
             )
         );
         if need_eq && !is_eq {
-            self.error(eq.span(), |diag| {
-                diag.help("`=` expected after property name");
-            })?;
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: eq.span(),
+                help: "`=` expected after property name",
+            }))?
         }
         if !need_eq && is_eq {
-            self.error(eq.span(), |diag| {
-                diag.help("unexpected `=` after property name");
-            })?;
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: eq.span(),
+                help: "unexpected `=` after property name",
+            }))?
         }
 
         if is_eq {
@@ -186,9 +204,10 @@ impl<'tcx> AttrParser<'tcx> {
 
     fn parse_i32<'a>(&self, mut cursor: Cursor<'a>) -> Result<(i32, Cursor<'a>), ErrorGuaranteed> {
         let expect_int = |span| {
-            self.error(span, |diag| {
-                diag.help("an integer expected");
-            })
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span,
+                help: "an integer expected",
+            }))
         };
 
         let negative = if matches!(
@@ -234,9 +253,10 @@ impl<'tcx> AttrParser<'tcx> {
         mut cursor: Cursor<'a>,
     ) -> Result<((u32, Option<u32>), Cursor<'a>), ErrorGuaranteed> {
         let expect_range = |span| {
-            self.error(span, |diag| {
-                diag.help("a range expected");
-            })
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span,
+                help: "a range expected",
+            }))
         };
 
         let start_span = cursor.peek().span();
@@ -332,9 +352,10 @@ impl<'tcx> AttrParser<'tcx> {
         if end.is_some() && end.unwrap() <= start {
             let end_span = cursor.next().span();
 
-            self.error(start_span.until(end_span), |diag| {
-                diag.help("the preemption count expectation range must be non-empty");
-            })?;
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: start_span.until(end_span),
+                help: "the preemption count expectation range must be non-empty",
+            }))?
         }
 
         Ok(((start, end), cursor))
@@ -355,9 +376,10 @@ impl<'tcx> AttrParser<'tcx> {
             ..
         }) = &item.args
         else {
-            self.error(attr.span(), |diag| {
-                diag.help("correct usage looks like `#[kint::preempt_count(...)]`");
-            })?;
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: attr.span(),
+                help: "correct usage looks like `#[kint::preempt_count(...)]`",
+            }))?
         };
 
         self.parse_comma_delimited(Cursor::new(tts.iter(), delim_span.close), |cursor| {
@@ -367,13 +389,10 @@ impl<'tcx> AttrParser<'tcx> {
                     Ok(match name.name {
                         crate::symbol::adjust | sym::expect => true,
                         crate::symbol::unchecked => false,
-                        _ => {
-                            self.error(name.span, |diag| {
-                                diag.help(
-                                    "unknown property, expected `adjust`, `expect` or `unchecked`",
-                                );
-                            })?;
-                        }
+                        _ => Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                            span: name.span,
+                            help: "unknown property, expected `adjust`, `expect` or `unchecked`",
+                        }))?,
                     })
                 },
                 |name, mut cursor| {
@@ -400,9 +419,10 @@ impl<'tcx> AttrParser<'tcx> {
         })?;
 
         if adjustment.is_none() && expectation.is_none() {
-            self.error(delim_span.entire(), |diag| {
-                diag.help("at least one of `adjust` or `expect` property must be specified");
-            })?;
+            Err(self.tcx.dcx().emit_err(InvalidPreemptCountAttribute {
+                span: delim_span.entire(),
+                help: "at least one of `adjust` or `expect` property must be specified",
+            }))?
         }
 
         Ok(PreemptionCount {
@@ -421,9 +441,8 @@ impl<'tcx> AttrParser<'tcx> {
         };
         if item.path.segments.len() != 2 {
             self.tcx
-                .node_span_lint(crate::INCORRECT_ATTRIBUTE, self.hir_id, item.span, |lint| {
-                    lint.primary_message("invalid klint attribute");
-                });
+                .dcx()
+                .emit_err(InvalidAttribute { span: item.span });
             return None;
         }
         match item.path.segments[1] {
@@ -468,37 +487,26 @@ impl<'tcx> AttrParser<'tcx> {
                         },
                 } = item.args
                 else {
-                    self.error(attr.span(), |diag| {
-                        diag.help(
-                            r#"correct usage looks like `#[kint::diagnostic_item = "name"]`"#,
-                        );
-                    })
-                    .ok()?;
+                    self.tcx
+                        .dcx()
+                        .emit_err(InvalidDiagnosticItem { span: attr.span() });
+                    None?
                 };
 
                 Some(KlintAttribute::DiagnosticItem(value))
             }
             _ => {
-                self.tcx.node_span_lint(
-                    crate::INCORRECT_ATTRIBUTE,
-                    self.hir_id,
-                    item.path.span,
-                    |lint| {
-                        lint.primary_message("unrecognized klint attribute");
-                    },
-                );
+                self.tcx.dcx().emit_err(UnknownAttribute {
+                    span: item.path.span,
+                });
                 None
             }
         }
     }
 }
 
-pub fn parse_klint_attribute(
-    tcx: TyCtxt<'_>,
-    hir_id: HirId,
-    attr: &Attribute,
-) -> Option<KlintAttribute> {
-    AttrParser { tcx, hir_id }.parse(attr)
+pub fn parse_klint_attribute(tcx: TyCtxt<'_>, attr: &Attribute) -> Option<KlintAttribute> {
+    AttrParser { tcx }.parse(attr)
 }
 
 memoize!(
@@ -508,7 +516,7 @@ memoize!(
     ) -> Arc<Vec<KlintAttribute>> {
         let mut v = Vec::new();
         for attr in cx.hir_attrs(hir_id) {
-            let Some(attr) = crate::attribute::parse_klint_attribute(cx.tcx, hir_id, attr) else {
+            let Some(attr) = crate::attribute::parse_klint_attribute(cx.tcx, attr) else {
                 continue;
             };
             v.push(attr);

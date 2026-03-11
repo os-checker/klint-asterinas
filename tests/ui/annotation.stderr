@@ -5,7 +5,6 @@ error: incorrect usage of `#[kint::preempt_count]`
   | ^^^^^^^^^^^^^^^^^^^^^^^
   |
   = help: correct usage looks like `#[kint::preempt_count(...)]`
-  = note: `#[forbid(klint::incorrect_attribute)]` on by default
 
 error: incorrect usage of `#[kint::preempt_count]`
  --> $DIR/annotation.rs:8:23
