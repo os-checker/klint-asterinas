@@ -32,8 +32,7 @@ use rustc_middle::ty::{
     TypeVisitableExt, VtblEntry,
 };
 use rustc_session::config::{DebugInfo, EntryFnType};
-use rustc_span::source_map::{Spanned, dummy_spanned, respan};
-use rustc_span::{DUMMY_SP, ErrorGuaranteed, Span};
+use rustc_span::{DUMMY_SP, ErrorGuaranteed, Span, Spanned, dummy_spanned, respan};
 use rustc_trait_selection::traits;
 use std::cell::OnceCell;
 
