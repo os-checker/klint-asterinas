@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use rustc_data_structures::fx::FxHashMap;
-use rustc_data_structures::sync::{DynSend, DynSync, MTLock, RwLock};
+use rustc_data_structures::sync::{DynSend, DynSync, Lock, RwLock};
 use rustc_hir::def_id::{CrateNum, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_serialize::{Decodable, Encodable};
@@ -53,8 +53,8 @@ pub(crate) trait PersistentQuery: QueryValueDecodable {
 
 pub struct AnalysisCtxt<'tcx> {
     pub tcx: TyCtxt<'tcx>,
-    pub local_conn: MTLock<Connection>,
-    pub sql_conn: RwLock<FxHashMap<CrateNum, Option<Arc<MTLock<Connection>>>>>,
+    pub local_conn: Lock<Connection>,
+    pub sql_conn: RwLock<FxHashMap<CrateNum, Option<Arc<Lock<Connection>>>>>,
 
     pub call_stack: RwLock<Vec<UseSite<'tcx>>>,
     pub query_cache: RwLock<AnyMap<dyn Any + DynSend + DynSync>>,
@@ -136,7 +136,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
         unsafe { std::mem::transmute(cache) }
     }
 
-    pub(crate) fn sql_connection(&self, cnum: CrateNum) -> Option<Arc<MTLock<Connection>>> {
+    pub(crate) fn sql_connection(&self, cnum: CrateNum) -> Option<Arc<Lock<Connection>>> {
         if let Some(v) = self.sql_conn.borrow().get(&cnum) {
             return v.clone();
         }
@@ -179,7 +179,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 );
             }
 
-            result = Some(Arc::new(MTLock::new(conn)));
+            result = Some(Arc::new(Lock::new(conn)));
             break;
         }
 
@@ -311,7 +311,7 @@ impl<'tcx> AnalysisCtxt<'tcx> {
 
         let ret = Self {
             tcx,
-            local_conn: MTLock::new(conn),
+            local_conn: Lock::new(conn),
             sql_conn: Default::default(),
             call_stack: Default::default(),
             query_cache: Default::default(),
