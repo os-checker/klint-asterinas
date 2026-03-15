@@ -29,6 +29,13 @@ fn main() {
         rustc_session::EarlyDiagCtxt::new(rustc_session::config::ErrorOutputType::default());
     rustc_driver::init_logger(&handler, rustc_log::LoggerConfig::from_env("KLINT_LOG"));
 
-    let args: Vec<_> = std::env::args().collect();
+    let mut args: Vec<_> = std::env::args().collect();
+    if args
+        .get(1)
+        .and_then(|arg| std::path::Path::new(arg.as_str()).file_name()?.to_str())
+        .is_some_and(|f| f == "rustc")
+    {
+        args.remove(1);
+    }
     rustc_driver::run_compiler(&args, &mut crate::callbacks::Driver);
 }
