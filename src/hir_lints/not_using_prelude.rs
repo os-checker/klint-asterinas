@@ -99,6 +99,6 @@ memoize!(
             );
         }
 
-        Arc::new(dbg!(defs))
+        Arc::new(defs)
     }
 );
