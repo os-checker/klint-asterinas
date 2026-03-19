@@ -15,7 +15,7 @@ use rustc_metadata::creader::MetadataLoaderDyn;
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::util::Providers;
-use rustc_session::config::{Options, OutputFilenames, PrintRequest};
+use rustc_session::config::{OutputFilenames, PrintRequest};
 use rustc_session::{EarlyDiagCtxt, Session};
 
 pub trait CallbacksExt: Callbacks + Send + 'static {
@@ -40,13 +40,13 @@ impl<C: CallbacksExt> Callbacks for CallbackWrapper<C> {
         self.callback.lock().unwrap().config(config);
 
         let make_codegen_backend = config.make_codegen_backend.take().unwrap_or_else(|| {
-            Box::new(|opts: &Options, target| {
-                let early_dcx = EarlyDiagCtxt::new(opts.error_format);
+            Box::new(|sess| {
+                let early_dcx = EarlyDiagCtxt::new(sess.opts.error_format);
                 rustc_interface::util::get_codegen_backend(
                     &early_dcx,
-                    &opts.sysroot,
-                    opts.unstable_opts.codegen_backend.as_deref(),
-                    target,
+                    &sess.opts.sysroot,
+                    sess.opts.unstable_opts.codegen_backend.as_deref(),
+                    &sess.target,
                 )
             })
         });
@@ -57,8 +57,8 @@ impl<C: CallbacksExt> Callbacks for CallbackWrapper<C> {
         // binary. We therefore hook the backend so that the whole process is done with `TyCtxt`
         // still present.
         let callback_clone = self.callback.clone();
-        config.make_codegen_backend = Some(Box::new(|opts, target| {
-            let codegen_backend = make_codegen_backend(opts, target);
+        config.make_codegen_backend = Some(Box::new(|sess| {
+            let codegen_backend = make_codegen_backend(sess);
             Box::new(BackendWrapper {
                 backend: codegen_backend,
                 callback: callback_clone,
