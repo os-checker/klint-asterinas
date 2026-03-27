@@ -75,12 +75,11 @@ memoize!(
             .copied()
             .filter(|&cnum| cx.extern_crate(cnum).is_some_and(|e| e.is_direct()))
         {
-            // For core/std, the prelude is of format crate::prelude::version, which we don't
-            // handle for now.
-            // let crate_name = cx.crate_name(cnum);
-            // if crate_name == sym::core || crate_name == sym::std {
-            //     continue;
-            // }
+            // Only check the absence of prelude against ostd crate.
+            let crate_name = cx.crate_name(cnum);
+            if crate_name.as_str() != "ostd" {
+                continue;
+            }
 
             // For all direct dependencies, check if `::prelude` is defined.
             let Some(prelude) = cx.module_children(cnum.as_def_id()).iter().find(|c| {
