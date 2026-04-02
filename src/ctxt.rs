@@ -224,7 +224,8 @@ impl<'tcx> AnalysisCtxt<'tcx> {
                 |row| row.get(0),
             )
             .optional()
-            .unwrap()?;
+            .ok()
+            .flatten()?;
         let mut decode_ctx = crate::serde::DecodeContext::new(self.tcx, &value_encoded, span);
         let value = Q::decode_value(&mut decode_ctx);
         Some(value)
